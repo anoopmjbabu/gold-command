@@ -535,6 +535,45 @@ header {visibility: hidden;}
 .rss-tag-geo { background: rgba(239,68,68,0.15); color: #ef4444; }
 .rss-tag-spx { background: rgba(245,158,11,0.15); color: #f59e0b; }
 .rss-breaking { border-left: 2px solid #ef4444; padding-left: 8px; }
+
+/* ═══ Tab Styling ═══ */
+.stTabs [data-baseweb="tab-list"] {
+    background: linear-gradient(180deg, #0b1022, #0a0e17);
+    border-bottom: 1px solid #1a2240;
+    gap: 0;
+    padding: 0 4px;
+}
+.stTabs [data-baseweb="tab"] {
+    color: #5a6a8a !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.3px;
+    padding: 10px 18px !important;
+    border: none !important;
+    background: transparent !important;
+    transition: color 0.2s, background 0.2s;
+}
+.stTabs [data-baseweb="tab"]:hover {
+    color: #f0b90b !important;
+    background: rgba(240,185,11,0.05) !important;
+}
+.stTabs [aria-selected="true"] {
+    color: #f0b90b !important;
+    border-bottom: 2px solid #f0b90b !important;
+    background: rgba(240,185,11,0.08) !important;
+}
+.stTabs [data-baseweb="tab-highlight"] {
+    background-color: #f0b90b !important;
+}
+.stTabs [data-baseweb="tab-border"] {
+    display: none;
+}
+@media (max-width: 768px) {
+    .stTabs [data-baseweb="tab"] {
+        font-size: 10px !important;
+        padding: 8px 10px !important;
+    }
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1513,8 +1552,26 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Auto-Refresh Controls ──
+    # ── Sidebar: Branding + Controls + CTA ──
     with st.sidebar:
+        # Product branding
+        st.markdown("""<div style="text-align:center;padding:12px 0 16px;">
+            <div style="font-size:18px;font-weight:900;color:#f0b90b;letter-spacing:2px;">GOLD COMMAND</div>
+            <div style="font-size:9px;color:#5a6a8a;letter-spacing:1px;margin-top:2px;">XAU/USD Intelligence Terminal</div>
+            <div style="font-size:8px;color:#3d4b6b;margin-top:4px;">v2.0 · by Anoop B.</div>
+        </div>""", unsafe_allow_html=True)
+
+        st.markdown('<div style="border-bottom:1px solid #1a2240;margin:8px 0;"></div>', unsafe_allow_html=True)
+
+        # Quick stats summary (always visible in sidebar)
+        st.markdown("### Quick Stats")
+        st.markdown("""<div style="font-size:10px;color:#6b7a99;margin-bottom:8px;">
+            Data auto-updates every refresh cycle.
+        </div>""", unsafe_allow_html=True)
+
+        st.markdown('<div style="border-bottom:1px solid #1a2240;margin:12px 0;"></div>', unsafe_allow_html=True)
+
+        # Auto-refresh
         st.markdown("### Auto-Refresh")
         auto_refresh = st.toggle("Enable auto-refresh", value=True)
         refresh_interval = st.select_slider(
@@ -1527,7 +1584,6 @@ def main():
             st.cache_data.clear()
             st.rerun()
 
-        # Show last refresh and next refresh time
         if 'last_refresh' not in st.session_state:
             st.session_state.last_refresh = time.time()
 
@@ -1536,6 +1592,45 @@ def main():
         st.markdown(f"""<div style="font-size:11px;color:#6b7a99;margin-top:8px;">
             Last refresh: {int(elapsed)}s ago<br>
             Next refresh: {int(next_in)}s
+        </div>""", unsafe_allow_html=True)
+
+        st.markdown('<div style="border-bottom:1px solid #1a2240;margin:12px 0;"></div>', unsafe_allow_html=True)
+
+        # Beginner mode toggle
+        st.markdown("### Display Mode")
+        beginner_mode = st.toggle("Beginner Mode", value=True, help="Show tooltips and simplified explanations")
+        st.session_state['beginner_mode'] = beginner_mode
+
+        st.markdown('<div style="border-bottom:1px solid #1a2240;margin:12px 0;"></div>', unsafe_allow_html=True)
+
+        # Subscription CTA
+        st.markdown("""<div style="background:linear-gradient(135deg,rgba(240,185,11,0.08),rgba(240,185,11,0.02));
+            border:1px solid rgba(240,185,11,0.2);border-radius:10px;padding:14px;text-align:center;margin-top:8px;">
+            <div style="font-size:11px;font-weight:800;color:#f0b90b;letter-spacing:0.5px;margin-bottom:6px;">UPGRADE TO PRO</div>
+            <div style="font-size:10px;color:#8892ab;line-height:1.5;margin-bottom:10px;">
+                Unlock SMC Engine, Backtesting,<br>Telegram Alerts & Priority Support
+            </div>
+            <div style="font-size:13px;font-weight:800;color:#f0b90b;margin-bottom:8px;">
+                $19.99<span style="font-size:9px;color:#6b7a99;font-weight:400;">/month</span>
+            </div>
+            <div style="font-size:8px;color:#5a6a8a;">7-day free trial · Cancel anytime</div>
+        </div>""", unsafe_allow_html=True)
+
+        # What's included in free vs pro
+        st.markdown("""<div style="margin-top:12px;font-size:9px;color:#5a6a8a;line-height:1.8;">
+            <div style="font-weight:700;color:#6b7a99;margin-bottom:4px;">FREE TIER (Current)</div>
+            ✅ Daily Brief &amp; KPI Dashboard<br>
+            ✅ Price Ranges &amp; Key Levels<br>
+            ✅ Macro Drivers &amp; News Feed<br>
+            ✅ Basic Signal Engine (15m)<br>
+            ✅ 3-Tier Analysis<br>
+            <div style="font-weight:700;color:#f0b90b;margin-top:8px;margin-bottom:4px;">PRO TIER</div>
+            🔒 SMC Engine (Order Blocks + FVGs)<br>
+            🔒 Signal Backtesting &amp; Stats<br>
+            🔒 5m Entry Timeframe<br>
+            🔒 Telegram Alert Integration<br>
+            🔒 Custom S/R Level Alerts<br>
+            🔒 Priority Refresh (1 min)<br>
         </div>""", unsafe_allow_html=True)
 
     # Auto-refresh trigger
@@ -1617,7 +1712,31 @@ def main():
     brief_data = export_daily_brief_json(key_levels, pivots, ranges, drivers, trade_signals, signal_trend)
 
     # ══════════════════════════════════════════════════
-    # DAILY BRIEF — Quick Summary Card
+    # WELCOME BANNER (first visit only)
+    # ══════════════════════════════════════════════════
+    if 'visited' not in st.session_state:
+        st.session_state.visited = True
+        st.markdown("""<div style="background:linear-gradient(135deg,rgba(240,185,11,0.06),rgba(16,185,129,0.04));
+            border:1px solid rgba(240,185,11,0.15);border-radius:10px;padding:16px 20px;margin-bottom:16px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                    <div style="font-size:14px;font-weight:700;color:#f0b90b;margin-bottom:4px;">Welcome to Gold Command</div>
+                    <div style="font-size:11px;color:#8892ab;line-height:1.6;">
+                        Your AI-powered gold market intelligence terminal. Start with the <b style="color:#f0b90b;">Daily Brief</b> below for a quick summary,
+                        then explore <b style="color:#f0b90b;">Trade Signals</b> and <b style="color:#f0b90b;">Intelligence</b> tabs.
+                        Hover any <span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;
+                        background:rgba(240,185,11,0.12);color:#f0b90b;font-size:9px;font-weight:800;border:1px solid rgba(240,185,11,0.2);">?</span>
+                        icon for beginner explanations.
+                    </div>
+                </div>
+                <div style="font-size:9px;color:#5a6a8a;text-align:right;white-space:nowrap;margin-left:16px;">
+                    New to gold trading?<br>Toggle <b style="color:#f0b90b;">Beginner Mode</b> in sidebar
+                </div>
+            </div>
+        </div>""", unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════════════
+    # DISPLAY — ABOVE TABS (always visible)
     # ══════════════════════════════════════════════════
     rsi_val = gold_df['RSI'].iloc[-1]
     brief_text, brief_bias, brief_bias_color, brief_bias_bg = generate_daily_brief_text(
@@ -1708,581 +1827,626 @@ def main():
     """, unsafe_allow_html=True)
 
     # ══════════════════════════════════════════════════
-    # RANGE ANALYSIS ROW
+    # TAB NAVIGATION
     # ══════════════════════════════════════════════════
-    st.markdown("""<div class="section-header" style="--section-accent: #3b82f6;">
-        <span class="section-title">Price Ranges</span>
-        <span class="pill pill-data">DAILY / WEEKLY / MONTHLY</span>
-    </div>""", unsafe_allow_html=True)
+    tab_dashboard, tab_signals, tab_intel, tab_news, tab_smc, tab_backtest = st.tabs([
+        "📊 Dashboard", "🎯 Trade Signals", "🧠 Intelligence", "📰 News & Events", "🔲 SMC Engine", "📈 Backtest"
+    ])
 
-    rc1, rc2, rc3 = st.columns(3)
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # TAB 1 — DASHBOARD
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    with tab_dashboard:
 
-    for col, label, key in [(rc1, "Today", "today"), (rc2, "This Week (5D)", "week"), (rc3, "This Month (22D)", "month")]:
-        r = ranges[key]
-        util_color = "#10b981" if r['util'] < 80 else "#f59e0b" if r['util'] < 120 else "#ef4444"
-        bar_width = min(r['util'], 150)  # cap at 150% for display
-        with col:
-            st.markdown(f"""<div class="range-card">
-                <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-                    <span style="font-size:11px;font-weight:700;color:#a8b2c8;text-transform:uppercase;letter-spacing:0.5px;">{label}</span>
-                    <span style="font-size:10px;font-weight:700;color:{util_color};">{r['util']:.0f}% of expected</span>
-                </div>
-                <div style="display:flex;justify-content:space-between;font-family:JetBrains Mono;font-size:13px;margin-bottom:4px;">
-                    <span style="color:#10b981;">L: ${r['low']:,.2f}</span>
-                    <span style="color:#f0b90b;font-weight:700;">${r['range']:,.2f}</span>
-                    <span style="color:#ef4444;">H: ${r['high']:,.2f}</span>
-                </div>
-                <div class="prob-bar" style="height:8px;margin:6px 0;">
-                    <div class="prob-fill" style="width:{bar_width}%;background:linear-gradient(90deg,#10b981,{util_color});border-radius:3px;"></div>
-                </div>
-                <div style="display:flex;justify-content:space-between;font-size:10px;color:#6b7a99;">
-                    <span>Avg: ${r['avg']:,.2f}</span>
-                    <span>ATR Expected: ${r['expected']:,.2f}</span>
-                </div>
-            </div>""", unsafe_allow_html=True)
-
-    # ══════════════════════════════════════════════════
-    # MULTI-TIMEFRAME PROBABILITY
-    # ══════════════════════════════════════════════════
-    tt_mtf = tooltip("Probability", "Directional Probability")
-    st.markdown(f"""<div class="section-header" style="--section-accent: #a855f7;">
-        <span class="section-title">{tt_mtf}</span>
-        <span class="pill pill-model">DAILY / WEEKLY / MONTHLY</span>
-    </div>""", unsafe_allow_html=True)
-
-    prob_cols = st.columns(3)
-    for pcol, (tf_key, tf_label) in zip(prob_cols, [('daily', 'Daily (1-2D)'), ('weekly', 'Weekly (5D)'), ('monthly', 'Monthly (20D)')]):
-        p = mtf_probs[tf_key]
-        bull_pct = p['bullish']
-        bear_pct = p['bearish']
-        bias = p['bias']
-        rationale = p['rationale']
-        b_color = "#10b981" if bias == "BULLISH" else "#ef4444" if bias == "BEARISH" else "#f59e0b"
-        b_bg = f"rgba({16 if bias == 'BULLISH' else 239 if bias == 'BEARISH' else 245},{185 if bias == 'BULLISH' else 68 if bias == 'BEARISH' else 158},{129 if bias == 'BULLISH' else 68 if bias == 'BEARISH' else 11},0.12)"
-        with pcol:
-            st.markdown(f"""<div class="intel-card" style="padding:14px 16px;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-                    <span style="font-size:11px;font-weight:700;color:#a8b2c8;text-transform:uppercase;letter-spacing:0.5px;">{tf_label}</span>
-                    <span style="font-size:9px;font-weight:800;padding:3px 10px;border-radius:4px;background:{b_bg};color:{b_color};">{bias}</span>
-                </div>
-                <div class="prob-row">
-                    <span class="prob-label" style="color:#10b981;">Bull</span>
-                    <div class="prob-track"><div class="prob-fill" style="width:{bull_pct}%;background:linear-gradient(90deg,#10b981,#059669);"></div></div>
-                    <span class="prob-val" style="color:#10b981;">{bull_pct}%</span>
-                </div>
-                <div class="prob-row">
-                    <span class="prob-label" style="color:#ef4444;">Bear</span>
-                    <div class="prob-track"><div class="prob-fill" style="width:{bear_pct}%;background:linear-gradient(90deg,#ef4444,#dc2626);"></div></div>
-                    <span class="prob-val" style="color:#ef4444;">{bear_pct}%</span>
-                </div>
-                <div style="font-size:10px;color:#6b7a99;margin-top:6px;font-style:italic;">{rationale}</div>
-            </div>""", unsafe_allow_html=True)
-
-    # ══════════════════════════════════════════════════
-    # DAILY KEY LEVELS — The Game Plan
-    # ══════════════════════════════════════════════════
-    bull_d = sum(1 for d in drivers if d[2] == "BULLISH")
-    bear_d = sum(1 for d in drivers if d[2] == "BEARISH")
-    if bull_d > bear_d + 1:
-        bias_label, bias_color, bias_bg = "BULLISH", "#10b981", "rgba(16,185,129,0.12)"
-    elif bear_d > bull_d + 1:
-        bias_label, bias_color, bias_bg = "BEARISH", "#ef4444", "rgba(239,68,68,0.12)"
-    else:
-        bias_label, bias_color, bias_bg = "NEUTRAL", "#f59e0b", "rgba(245,158,11,0.12)"
-
-    st.markdown(f"""<div class="section-header" style="--section-accent: #f0b90b;">
-        <div>
-            <span class="section-title">Daily Key Levels</span>
-            <div style="display:flex;align-items:center;gap:10px;margin-top:6px;">
-                <span style="font-size:10px;font-weight:800;padding:4px 12px;border-radius:4px;background:{bias_bg};color:{bias_color};letter-spacing:0.5px;">
-                    Session Bias: {bias_label}</span>
-                <span style="font-size:9px;color:#5a6a8a;letter-spacing:0.5px;">
-                    Shared with Gold Intel Daily Brief</span>
-            </div>
-        </div>
-        <span class="pill pill-live">GAME PLAN</span>
-    </div>""", unsafe_allow_html=True)
-
-    lv1, lv2, lv3, lv4 = st.columns(4)
-
-    with lv1:
-        st.markdown(f"""<div class="intel-card" style="padding:12px 14px;">
-            <div style="font-size:10px;font-weight:700;color:#a8b2c8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Session Levels</div>
-            <div class="level-row"><span style="color:#6b7a99;font-size:10px;">Today Open</span>
-                <span style="font-family:JetBrains Mono;font-size:12px;color:#e8ecf4;">${key_levels['today_open']:,.2f}</span></div>
-            <div class="level-row"><span style="color:#6b7a99;font-size:10px;">Today High</span>
-                <span style="font-family:JetBrains Mono;font-size:12px;color:#10b981;">${key_levels['today_high']:,.2f}</span></div>
-            <div class="level-row"><span style="color:#6b7a99;font-size:10px;">Today Low</span>
-                <span style="font-family:JetBrains Mono;font-size:12px;color:#ef4444;">${key_levels['today_low']:,.2f}</span></div>
-            <div style="border-top:1px solid #1e2745;margin:6px 0;"></div>
-            <div class="level-row"><span style="color:#f0b90b;font-size:10px;font-weight:600;">Prev Day High</span>
-                <span style="font-family:JetBrains Mono;font-size:12px;color:#f0b90b;">${key_levels['pdh']:,.2f}</span></div>
-            <div class="level-row"><span style="color:#f0b90b;font-size:10px;font-weight:600;">Prev Day Low</span>
-                <span style="font-family:JetBrains Mono;font-size:12px;color:#f0b90b;">${key_levels['pdl']:,.2f}</span></div>
-            <div class="level-row"><span style="color:#f0b90b;font-size:10px;font-weight:600;">Prev Day Close</span>
-                <span style="font-family:JetBrains Mono;font-size:12px;color:#f0b90b;">${key_levels['pdc']:,.2f}</span></div>
-        </div>""", unsafe_allow_html=True)
-
-    with lv2:
-        st.markdown(f"""<div class="intel-card" style="padding:12px 14px;">
-            <div style="font-size:10px;font-weight:700;color:#a8b2c8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Pivot Points</div>
-            <div class="level-row"><span style="color:#ef4444;font-size:10px;">R3</span>
-                <span style="font-family:JetBrains Mono;font-size:12px;color:#ef4444;">${pivots['R3']:,.2f}</span></div>
-            <div class="level-row"><span style="color:#ef4444;font-size:10px;">R2</span>
-                <span style="font-family:JetBrains Mono;font-size:12px;color:#ef4444;">${pivots['R2']:,.2f}</span></div>
-            <div class="level-row"><span style="color:#ef4444;font-size:10px;">R1</span>
-                <span style="font-family:JetBrains Mono;font-size:12px;color:#ef4444;">${pivots['R1']:,.2f}</span></div>
-            <div class="level-row" style="background:rgba(240,185,11,0.08);border-radius:4px;padding:4px 6px;">
-                <span style="color:#f0b90b;font-size:10px;font-weight:700;">PIVOT</span>
-                <span style="font-family:JetBrains Mono;font-size:12px;color:#f0b90b;font-weight:700;">${pivots['PP']:,.2f}</span></div>
-            <div class="level-row"><span style="color:#10b981;font-size:10px;">S1</span>
-                <span style="font-family:JetBrains Mono;font-size:12px;color:#10b981;">${pivots['S1']:,.2f}</span></div>
-            <div class="level-row"><span style="color:#10b981;font-size:10px;">S2</span>
-                <span style="font-family:JetBrains Mono;font-size:12px;color:#10b981;">${pivots['S2']:,.2f}</span></div>
-            <div class="level-row"><span style="color:#10b981;font-size:10px;">S3</span>
-                <span style="font-family:JetBrains Mono;font-size:12px;color:#10b981;">${pivots['S3']:,.2f}</span></div>
-        </div>""", unsafe_allow_html=True)
-
-    with lv3:
-        sr_html = ""
-        if signal_sr_levels:
-            for lvl in sorted(signal_sr_levels, key=lambda x: x['price'], reverse=True)[:6]:
-                lvl_color = "#ef4444" if lvl['type'] == 'resistance' else "#10b981"
-                lvl_icon = "R" if lvl['type'] == 'resistance' else "S"
-                sr_html += f"""<div class="level-row">
-                    <span style="color:{lvl_color};font-size:10px;">{lvl_icon} ({lvl['touches']}x)</span>
-                    <span style="font-family:JetBrains Mono;font-size:12px;color:{lvl_color};">${lvl['price']:,.2f}</span>
-                </div>"""
-        else:
-            sr_html = '<div style="font-size:11px;color:#6b7a99;padding:6px 0;">No S/R zones computed</div>'
-
-        round_html = ""
-        for rn in key_levels['round_numbers']:
-            round_html += f"""<div class="level-row">
-                <span style="color:#a855f7;font-size:10px;">Psych</span>
-                <span style="font-family:JetBrains Mono;font-size:12px;color:#a855f7;">${rn:,.0f}</span>
-            </div>"""
-
-        st.markdown(f"""<div class="intel-card" style="padding:12px 14px;">
-            <div style="font-size:10px;font-weight:700;color:#a8b2c8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">4H S/R Zones (Signal Engine)</div>
-            {sr_html}
-            <div style="border-top:1px solid #1e2745;margin:6px 0;"></div>
-            <div style="font-size:10px;font-weight:700;color:#a8b2c8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Round Numbers</div>
-            {round_html}
-        </div>""", unsafe_allow_html=True)
-
-    with lv4:
-        dxy_info = f"${key_levels['dxy']['value']}" if key_levels['dxy']['value'] else "N/A"
-        dxy_delta = f"({key_levels['dxy']['change_pct']:+.2f}%)" if key_levels['dxy']['change_pct'] else ""
-        tny_info = f"{key_levels['tny']['value']}%" if key_levels['tny']['value'] else "N/A"
-        tny_delta = f"({key_levels['tny']['change']:+.2f})" if key_levels['tny']['change'] else ""
-
-        st.markdown(f"""<div class="intel-card" style="padding:12px 14px;">
-            <div style="font-size:10px;font-weight:700;color:#a8b2c8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Anchors</div>
-            <div class="level-row"><span style="color:#3b82f6;font-size:10px;">Weekly Open</span>
-                <span style="font-family:JetBrains Mono;font-size:12px;color:#3b82f6;">${key_levels['weekly_open']:,.2f}</span></div>
-            <div class="level-row"><span style="color:#3b82f6;font-size:10px;">Monthly Open</span>
-                <span style="font-family:JetBrains Mono;font-size:12px;color:#3b82f6;">${key_levels['monthly_open']:,.2f}</span></div>
-            <div style="border-top:1px solid #1e2745;margin:6px 0;"></div>
-            <div style="font-size:10px;font-weight:700;color:#a8b2c8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Macro Snapshot</div>
-            <div class="level-row"><span style="color:#6b7a99;font-size:10px;">DXY</span>
-                <span style="font-family:JetBrains Mono;font-size:12px;color:#e8ecf4;">{dxy_info} <span style="font-size:10px;color:#6b7a99;">{dxy_delta}</span></span></div>
-            <div class="level-row"><span style="color:#6b7a99;font-size:10px;">US 10Y Yield</span>
-                <span style="font-family:JetBrains Mono;font-size:12px;color:#e8ecf4;">{tny_info} <span style="font-size:10px;color:#6b7a99;">{tny_delta}</span></span></div>
-            <div style="border-top:1px solid #1e2745;margin:6px 0;"></div>
-            <div style="font-size:9px;color:#6b7a99;line-height:1.5;">
-                Data exported to <b style="color:#a8b2c8;">daily_brief_data.json</b><br>
-                Gold Intel Daily skill reads this file.
-            </div>
-        </div>""", unsafe_allow_html=True)
-
-    # ══════════════════════════════════════════════════
-    # SIGNAL ENGINE — Trade Signals
-    # ══════════════════════════════════════════════════
-    trend_color_map = {
-        "BULLISH": ("#10b981", "rgba(16,185,129,0.12)"),
-        "WEAK_BULLISH": ("#10b981", "rgba(16,185,129,0.08)"),
-        "BEARISH": ("#ef4444", "rgba(239,68,68,0.12)"),
-        "WEAK_BEARISH": ("#ef4444", "rgba(239,68,68,0.08)"),
-        "NEUTRAL": ("#f59e0b", "rgba(245,158,11,0.12)"),
-    }
-    tc, tbg = trend_color_map.get(signal_trend, ("#f59e0b", "rgba(245,158,11,0.12)"))
-    trend_label = signal_trend.replace("_", " ")
-
-    st.markdown(f"""<div class="section-header" style="--section-accent: {tc};">
-        <div>
-            <span class="section-title">Trade Signals</span>
-            <div style="display:flex;align-items:center;gap:10px;margin-top:6px;">
-                <span class="signal-trend-badge" style="background:{tbg};color:{tc};letter-spacing:0.5px;">Daily Trend: {trend_label}</span>
-                <span style="font-size:9px;color:#5a6a8a;">Multi-timeframe: Daily &gt; 4H zones &gt; 15m entry patterns</span>
-            </div>
-        </div>
-        <span class="pill pill-live">SIGNAL ENGINE</span>
-    </div>""", unsafe_allow_html=True)
-
-    if trade_signals:
-        sig_cols = st.columns(min(len(trade_signals), 3))
-        for i, signal in enumerate(trade_signals[:6]):
-            formatted = format_signal_for_beginner(signal)
-            col = sig_cols[i % min(len(trade_signals), 3)]
-
-            direction = signal['direction'].lower()
-            conf = signal.get('confidence', 'LOW')
-            conf_class = 'conf-high' if conf == 'HIGH' else 'conf-med' if conf == 'MEDIUM' else 'conf-low'
-            score = signal.get('score', 0)
-
-            if score >= 80:
-                ring_bg, ring_border, ring_color = "rgba(16,185,129,0.15)", "#10b981", "#10b981"
-            elif score >= 65:
-                ring_bg, ring_border, ring_color = "rgba(245,158,11,0.15)", "#f59e0b", "#f59e0b"
-            else:
-                ring_bg, ring_border, ring_color = "rgba(107,122,153,0.15)", "#6b7a99", "#6b7a99"
-
-            reasons_html = ""
-            for reason in formatted.get('reasons', []):
-                reasons_html += f'<span class="signal-reason-tag">{reason}</span>'
-
-            levels_html = ""
-            if formatted.get('entry'):
-                tt_rr = tooltip("Risk/Reward", "Risk:Reward")
-                levels_html = f"""<div class="signal-levels">
-                    <div class="signal-level-item">
-                        <div class="signal-level-label">Entry</div>
-                        <div class="signal-level-value" style="color:#e8ecf4;">{formatted['entry']}</div>
-                    </div>
-                    <div class="signal-level-item">
-                        <div class="signal-level-label">Stop Loss</div>
-                        <div class="signal-level-value" style="color:#ef4444;">${signal['stop_loss']:,.2f}</div>
-                    </div>
-                    <div class="signal-level-item">
-                        <div class="signal-level-label">Take Profit</div>
-                        <div class="signal-level-value" style="color:#10b981;">${signal['take_profit']:,.2f}</div>
-                    </div>
-                    <div class="signal-level-item">
-                        <div class="signal-level-label">{tt_rr}</div>
-                        <div class="signal-level-value" style="color:#f0b90b;">{formatted.get('rr', 'N/A')}</div>
-                    </div>
-                </div>"""
-
-            time_str = signal['time'].strftime('%b %d, %H:%M') if hasattr(signal['time'], 'strftime') else str(signal['time'])[:16]
-
-            with col:
-                st.markdown(f"""<div class="signal-card {direction}">
-                    <div class="signal-score-ring" style="background:{ring_bg};border:2px solid {ring_border};color:{ring_color};">
-                        {score}
-                    </div>
-                    <div class="signal-badge {direction}">{formatted['emoji']} {signal['direction']}</div>
-                    <span class="signal-conf {conf_class}">{conf} confidence</span>
-                    <div style="font-size:10px;color:#6b7a99;margin-top:4px;">{time_str} · {signal['timeframe']} · {signal.get('session', '')} · {signal['pattern_name']}</div>
-                    <div class="signal-explanation">{formatted['explanation']}</div>
-                    {levels_html}
-                    <div class="signal-reasons">{reasons_html}</div>
-                </div>""", unsafe_allow_html=True)
-    else:
-        st.markdown("""<div class="signal-empty">
-            <div style="font-size:24px;margin-bottom:8px;">&#9203;</div>
-            <div style="font-weight:600;color:#a8b2c8;margin-bottom:4px;">No Active Signals</div>
-            <div>No candle patterns detected at key support/resistance levels right now.<br>
-            The engine scans 15-minute bars at 4H-derived S/R zones aligned with the daily trend.</div>
-        </div>""", unsafe_allow_html=True)
-
-    # ══════════════════════════════════════════════════
-    # FULL-WIDTH TRADINGVIEW CHART
-    # ══════════════════════════════════════════════════
-    tv_html = """
-    <html><head><style>
-      *{margin:0;padding:0;} html,body{width:100%;height:100%;overflow:hidden;background:#0a0e17;}
-      .tradingview-widget-container{width:100%;height:100%;}
-      .tradingview-widget-container__widget{width:100%;height:100%;}
-    </style></head><body>
-    <div class="tradingview-widget-container">
-      <div class="tradingview-widget-container__widget"></div>
-      <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>
-      {
-        "autosize":true,
-        "symbol":"OANDA:XAUUSD",
-        "interval":"15",
-        "timezone":"Etc/UTC",
-        "theme":"dark",
-        "style":"1",
-        "locale":"en",
-        "backgroundColor":"rgba(10,14,23,1)",
-        "gridColor":"rgba(30,39,69,0.4)",
-        "withdateranges":true,
-        "hide_side_toolbar":false,
-        "allow_symbol_change":true,
-        "details":false,
-        "hotlist":false,
-        "calendar":false,
-        "studies":["BB@tv-basicstudies","Volume@tv-basicstudies"],
-        "support_host":"https://www.tradingview.com"
-      }
-      </script>
-    </div>
-    </body></html>
-    """
-    st.components.v1.html(tv_html, height=650)
-
-    # ══════════════════════════════════════════════════
-    # INTELLIGENCE GRID — 3 columns below chart
-    # ══════════════════════════════════════════════════
-    col_analysis, col_drivers, col_data = st.columns([2, 1, 1])
-
-    with col_analysis:
-        # ── 3-TIER ANALYSIS ──
-        st.markdown("""<div class="section-header" style="--section-accent: #a855f7;">
-            <span class="section-title">Analysis</span>
-            <span class="pill pill-model">3-TIER</span>
-        </div>""", unsafe_allow_html=True)
-
-        tier = st.radio("Perspective", ["Beginner", "Intermediate", "Pro"], horizontal=True, label_visibility="collapsed")
-
-        if tier == "Beginner":
-            st.markdown(f'<div class="tier-tab tier-beginner"><div class="tier-label" style="color:#3b82f6;">Beginner View</div>{beginner}</div>', unsafe_allow_html=True)
-        elif tier == "Intermediate":
-            st.markdown(f'<div class="tier-tab tier-intermediate"><div class="tier-label" style="color:#f59e0b;">Intermediate View</div>{intermediate}</div>', unsafe_allow_html=True)
-        else:
-            st.markdown(f'<div class="tier-tab tier-pro"><div class="tier-label" style="color:#a855f7;">Pro View</div>{pro}</div>', unsafe_allow_html=True)
-
-    with col_drivers:
-        # ── MACRO DRIVERS ──
-        tt_macro = tooltip("Macro Drivers")
-        st.markdown(f"""<div class="intel-card"><h3 style="margin-bottom:14px;">{tt_macro}
-            <span class="pill pill-data">AUTO-COMPUTED</span></h3>""", unsafe_allow_html=True)
-        # Map driver names to glossary terms for tooltips
-        _driver_tt_map = {"USD (DXY)": "DXY", "US 10Y Yield": "Yield", "VIX (Fear Index)": "VIX",
-                          "Gold Trend (SMA 20/50)": "SMA", "S&P 500": None, "Crude Oil": None}
-        for d in drivers:
-            name, detail, impact, why = d[0], d[1], d[2], d[3]
-            tag_class = "tag-bull" if impact == "BULLISH" else "tag-bear" if impact == "BEARISH" else "tag-mixed"
-            why_html = f'<br><small style="color:#8892ab;font-style:italic;">{why}</small>' if why else ''
-            icon_html = get_instrument_icon(name)
-            tt_key = _driver_tt_map.get(name)
-            name_html = tooltip(tt_key, name) if tt_key else name
-            st.markdown(f"""<div class="driver-row">
-                <span>{icon_html} {name_html}<br><small style="color:#6b7a99">{detail}</small>{why_html}</span>
-                <span class="{tag_class}">{impact}</span>
-            </div>""", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        # ── CORRELATIONS ──
-        tt_corr = tooltip("Correlation", "30D Correlations")
-        st.markdown(f"""<div class="intel-card"><h3>{tt_corr}
-            <span class="pill pill-model">COMPUTED</span></h3>""", unsafe_allow_html=True)
-        for name, val in correlations.items():
-            color = "#10b981" if val > 0.3 else "#ef4444" if val < -0.3 else "#6b7a99"
-            bg = "rgba(16,185,129,0.12)" if val > 0.3 else "rgba(239,68,68,0.12)" if val < -0.3 else "rgba(107,122,153,0.08)"
-            corr_icon = get_instrument_icon(name)
-            st.markdown(f"""<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;align-items:center;">
-                <span>{corr_icon} {name}</span>
-                <span class="corr-cell" style="background:{bg};color:{color};padding:2px 10px;border-radius:3px;min-width:55px;">{val:+.2f}</span>
-            </div>""", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with col_data:
-        # ── KEY LEVELS ──
-        tt_pivot = tooltip("Pivot", "Key Levels")
-        st.markdown(f"""<div class="intel-card"><h3>{tt_pivot}
-            <span class="pill pill-data">PIVOT + S/R</span></h3>""", unsafe_allow_html=True)
-        pcol1, pcol2 = st.columns(2)
-        with pcol1:
-            tt_sup = tooltip("Support")
-            st.markdown(f"<b style='color:#10b981;font-size:11px;'>{tt_sup}</b>", unsafe_allow_html=True)
-            for label, val in [("Pivot S1", pivots['S1']), ("Pivot S2", pivots['S2']), ("Pivot S3", pivots['S3'])]:
-                st.markdown(f'<div class="level-row"><span style="color:#10b981;font-family:JetBrains Mono">${val:,.0f}</span><span style="font-size:9px;color:#6b7a99">{label}</span></div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="level-row"><span style="color:#10b981;font-family:JetBrains Mono">${gold_df["SMA_20"].iloc[-1]:,.0f}</span><span style="font-size:9px;color:#6b7a99">SMA 20</span></div>', unsafe_allow_html=True)
-        with pcol2:
-            tt_res = tooltip("Resistance")
-            st.markdown(f"<b style='color:#ef4444;font-size:11px;'>{tt_res}</b>", unsafe_allow_html=True)
-            for label, val in [("Pivot R1", pivots['R1']), ("Pivot R2", pivots['R2']), ("Pivot R3", pivots['R3'])]:
-                st.markdown(f'<div class="level-row"><span style="color:#ef4444;font-family:JetBrains Mono">${val:,.0f}</span><span style="font-size:9px;color:#6b7a99">{label}</span></div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="level-row"><span style="color:#ef4444;font-family:JetBrains Mono">${gold_df["BB_upper"].iloc[-1]:,.0f}</span><span style="font-size:9px;color:#6b7a99">BB Upper</span></div>', unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        # ── PROBABILITY ──
-        tt_prob = tooltip("Probability", "30-Day Targets")
-        st.markdown(f"""<div class="intel-card"><h3>{tt_prob}
-            <span class="pill pill-model">PROBABILITY</span></h3>""", unsafe_allow_html=True)
-        st.markdown('<small style="color:#6b7a99">Based on ATR + historical volatility</small>', unsafe_allow_html=True)
-        st.markdown("<b style='color:#10b981;font-size:10px;'>UPSIDE</b>", unsafe_allow_html=True)
-        for price, prob in up_probs:
-            st.markdown(f"""<div class="prob-row">
-                <span style="width:60px;font-family:JetBrains Mono;color:#10b981;font-size:11px">${price:,.0f}</span>
-                <div class="prob-bar"><div class="prob-fill" style="width:{prob}%;background:#10b981;"></div></div>
-                <span style="width:35px;text-align:right;font-family:JetBrains Mono;color:#10b981;font-size:11px">{prob:.0f}%</span>
-            </div>""", unsafe_allow_html=True)
-        st.markdown("<b style='color:#ef4444;font-size:10px;margin-top:8px;display:block;'>DOWNSIDE</b>", unsafe_allow_html=True)
-        for price, prob in down_probs:
-            st.markdown(f"""<div class="prob-row">
-                <span style="width:60px;font-family:JetBrains Mono;color:#ef4444;font-size:11px">${price:,.0f}</span>
-                <div class="prob-bar"><div class="prob-fill" style="width:{prob}%;background:#ef4444;"></div></div>
-                <span style="width:35px;text-align:right;font-family:JetBrains Mono;color:#ef4444;font-size:11px">{prob:.0f}%</span>
-            </div>""", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    # ══════════════════════════════════════════════════
-    # VOLUME SPIKES + NEWS CORRELATION (Full Width)
-    # ══════════════════════════════════════════════════
-    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
-    st.markdown("""<div class="section-header" style="--section-accent: #a855f7;">
-        <div>
-            <span class="section-title">Volume Spike Detector</span>
-            <div style="font-size:9px;color:#5a6a8a;margin-top:4px;">High-volume candles matched to news, economic events &amp; correlated asset moves</div>
-        </div>
-        <span class="pill pill-model">MULTI-SOURCE</span>
-    </div>""", unsafe_allow_html=True)
-
-    if spikes_correlated:
-        for spike in spikes_correlated[:10]:
-            dir_class = "spike-up" if spike['direction'] == 'UP' else "spike-down"
-            dir_arrow = "▲" if spike['direction'] == 'UP' else "▼"
-
-            st.markdown(f"""<div class="spike-card">
-                <div class="spike-header">
-                    <span class="spike-date">{spike['date']}</span>
-                    <span>
-                        <span class="spike-vol {dir_class}">{dir_arrow} {spike['direction']} ${abs(spike['change']):,.2f} ({spike['change_pct']:+.2f}%)</span>
-                        &nbsp;
-                        <span style="font-size:10px;color:#f0b90b;font-weight:600;">{spike['vol_ratio']:.1f}x VOL</span>
-                    </span>
-                </div>
-                <div style="font-size:11px;color:#a8b2c8;">
-                    O: ${spike['open']:,.2f} &nbsp; H: ${spike['high']:,.2f} &nbsp; L: ${spike['low']:,.2f} &nbsp; C: ${spike['close']:,.2f}
-                </div>
-            """, unsafe_allow_html=True)
-
-            # ── Correlated Asset Moves (same-day context) ──
-            asset_moves = spike.get('asset_moves', {})
-            if asset_moves:
-                moves_html = '<div style="margin-top:8px;padding-top:6px;border-top:1px solid #263054;">'
-                moves_html += '<div style="font-size:9px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Same-Day Moves</div>'
-                moves_html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">'
-                for asset_name, mv in asset_moves.items():
-                    mv_color = "#10b981" if mv['change_pct'] >= 0 else "#ef4444"
-                    mv_arrow = "▲" if mv['change_pct'] >= 0 else "▼"
-                    asset_icon = get_instrument_icon(asset_name)
-                    moves_html += f'<span style="font-size:10px;padding:3px 8px;background:rgba(26,34,64,0.5);border-radius:4px;display:inline-flex;align-items:center;gap:4px;">'
-                    moves_html += f'{asset_icon}<span style="color:#a8b2c8;">{asset_name}</span> '
-                    moves_html += f'<span style="color:{mv_color};font-family:JetBrains Mono;font-weight:600;">{mv_arrow}{mv["change_pct"]:+.2f}%</span></span>'
-                moves_html += '</div></div>'
-                st.markdown(moves_html, unsafe_allow_html=True)
-
-            # ── Economic Calendar Events ──
-            econ_evts = spike.get('econ_events', [])
-            if econ_evts:
-                st.markdown('<div style="margin-top:6px;padding-top:6px;border-top:1px solid #263054;">', unsafe_allow_html=True)
-                st.markdown('<div style="font-size:9px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Economic Events</div>', unsafe_allow_html=True)
-                for evt in econ_evts[:2]:
-                    impact_color = "#ef4444" if evt['impact'] == 'HIGH' else "#f59e0b" if evt['impact'] == 'MEDIUM' else "#6b7a99"
-                    impact_bg = f"rgba({239 if evt['impact']=='HIGH' else 245 if evt['impact']=='MEDIUM' else 107},{68 if evt['impact']=='HIGH' else 158 if evt['impact']=='MEDIUM' else 122},{68 if evt['impact']=='HIGH' else 11 if evt['impact']=='MEDIUM' else 153},0.12)"
-                    instr_tags = " ".join(f'<span class="rss-tag rss-tag-{i.lower()}">{i}</span>' for i in evt.get('instruments', []))
-                    st.markdown(f"""<div style="font-size:11px;padding:3px 0;display:flex;align-items:center;gap:6px;">
-                        <span style="font-size:8px;font-weight:800;padding:2px 6px;border-radius:3px;background:{impact_bg};color:{impact_color};">{evt['impact']}</span>
-                        <span style="color:#e8ecf4;">{html_escape(evt['title'][:80])}</span>
-                        {instr_tags}
-                    </div>""", unsafe_allow_html=True)
-                st.markdown('</div>', unsafe_allow_html=True)
-
-            # ── News Articles ──
-            if spike['news']:
-                st.markdown('<div style="margin-top:6px;padding-top:6px;border-top:1px solid #263054;">', unsafe_allow_html=True)
-                st.markdown('<div style="font-size:9px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Related Headlines</div>', unsafe_allow_html=True)
-                for article in spike['news']:
-                    source = f" — {article['source']}" if article['source'] else ""
-                    safe_link = article['link'] if article['link'].startswith(('http://', 'https://')) else '#'
-                    st.markdown(f"""<div style="font-size:11px;padding:3px 0;">
-                        📰 <a href="{safe_link}" target="_blank" rel="noopener noreferrer" style="color:#3b82f6;text-decoration:none;">{html_escape(article['title'])}</a>
-                        <span style="color:#6b7a99;font-size:9px;">{source}</span>
-                    </div>""", unsafe_allow_html=True)
-                st.markdown('</div>', unsafe_allow_html=True)
-
-            # ── Fallback: no news AND no events ──
-            if not spike['news'] and not econ_evts and not asset_moves:
-                st.markdown('<div style="font-size:11px;color:#6b7a99;margin-top:4px;font-style:italic;">No catalyst identified — likely driven by options/futures expiry, institutional repositioning, or overseas session flows. Check economic calendar for scheduled releases.</div>', unsafe_allow_html=True)
-            elif not spike['news'] and not econ_evts:
-                st.markdown('<div style="font-size:11px;color:#6b7a99;margin-top:4px;font-style:italic;">No headline catalyst found — move likely driven by correlated asset flows shown above.</div>', unsafe_allow_html=True)
-
-            st.markdown('</div>', unsafe_allow_html=True)
-    else:
-        st.info("No significant volume spikes detected in recent data.")
-
-    # ══════════════════════════════════════════════════
-    # NEWS FEED (Full Width)
-    # ══════════════════════════════════════════════════
-    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
-    news_col, cal_col = st.columns([1, 1])
-
-    with news_col:
-        st.markdown("""<div class="section-header" style="--section-accent: #ef4444;">
-            <span class="section-title">Live News Feed</span>
-            <span class="pill pill-live">RSS · AUTO-REFRESH</span>
-        </div>""", unsafe_allow_html=True)
-        if news:
-            # Instrument impact keyword mapping
-            _impact_rules = {
-                'XAU': (['gold', 'xau', 'bullion', 'precious metal', 'safe haven', 'gold price', 'gold demand'], 'rss-tag-xau'),
-                'USD': (['dollar', 'usd', 'dxy', 'fed', 'federal reserve', 'interest rate', 'rate hike', 'rate cut', 'fomc', 'powell', 'treasury'], 'rss-tag-usd'),
-                'OIL': (['oil', 'crude', 'opec', 'brent', 'wti', 'petroleum', 'energy'], 'rss-tag-oil'),
-                'BOND': (['bond', 'yield', 'treasury', '10-year', '10y', 'debt', 'sovereign'], 'rss-tag-bond'),
-                'GEO': (['war', 'attack', 'strike', 'nuclear', 'bomb', 'missile', 'invasion', 'crisis', 'emergency', 'sanctions', 'conflict', 'geopolitical', 'tariff', 'trade war'], 'rss-tag-geo'),
-                'SPX': (['stock', 's&p', 'nasdaq', 'dow', 'equity', 'wall street', 'rally', 'selloff', 'correction', 'bear market', 'bull market'], 'rss-tag-spx'),
-            }
-            for article in news[:20]:
-                date_str = article['published'].strftime('%b %d, %H:%M') if article['published'] else ""
-                source = f" — {article['source']}" if article['source'] else ""
-                title_lower = article['title'].lower()
-                # Detect instrument impacts
-                impact_tags_html = ""
-                is_breaking = False
-                for tag_label, (keywords, tag_class) in _impact_rules.items():
-                    if any(kw in title_lower for kw in keywords):
-                        impact_tags_html += f'<span class="rss-tag {tag_class}">{tag_label}</span>'
-                        if tag_label == 'GEO':
-                            is_breaking = True
-                breaking_class = ' rss-breaking' if is_breaking else ''
-                prefix = '<span style="color:#ef4444;font-weight:700;font-size:10px;">⚡ BREAKING </span>' if is_breaking else ''
-                safe_link = article['link'] if article['link'].startswith(('http://', 'https://')) else '#'
-                st.markdown(f"""<div class="rss-item{breaking_class}">
-                    <div class="rss-title">
-                        {prefix}<a href="{safe_link}" target="_blank" rel="noopener noreferrer">{article['title']}</a>
-                        <div class="rss-impact-tags">{impact_tags_html}</div>
-                        <div style="font-size:9px;color:#6b7a99;margin-top:2px;">{date_str}{source}</div>
-                    </div>
-                </div>""", unsafe_allow_html=True)
-        else:
-            st.markdown('<div style="color:#6b7a99;font-size:12px;padding:8px;">No news available. Check internet connection.</div>', unsafe_allow_html=True)
-
-    with cal_col:
-        # Correlated instruments summary
+        # ── RANGE ANALYSIS ──
         st.markdown("""<div class="section-header" style="--section-accent: #3b82f6;">
-            <span class="section-title">Correlated Instruments</span>
-            <span class="pill pill-data">SNAPSHOT</span>
+            <span class="section-title">Price Ranges</span>
+            <span class="pill pill-data">DAILY / WEEKLY / MONTHLY</span>
         </div>""", unsafe_allow_html=True)
-        for name, df in corr_data.items():
-            if len(df) < 2:
-                continue
-            cur = df['Close'].iloc[-1]
-            prv = df['Close'].iloc[-2]
-            chg = ((cur / prv) - 1) * 100
-            color = "#10b981" if chg >= 0 else "#ef4444"
-            st.markdown(f"""<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #1e2745;font-size:12px;">
-                <span style="color:#a8b2c8">{name}</span>
-                <span>
-                    <span style="font-family:JetBrains Mono;color:#e8ecf4">{cur:,.2f}</span>
-                    <span style="font-family:JetBrains Mono;color:{color};margin-left:8px">{chg:+.2f}%</span>
-                </span>
+
+        rc1, rc2, rc3 = st.columns(3)
+
+        for col, label, key in [(rc1, "Today", "today"), (rc2, "This Week (5D)", "week"), (rc3, "This Month (22D)", "month")]:
+            r = ranges[key]
+            util_color = "#10b981" if r['util'] < 80 else "#f59e0b" if r['util'] < 120 else "#ef4444"
+            bar_width = min(r['util'], 150)  # cap at 150% for display
+            with col:
+                st.markdown(f"""<div class="range-card">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                        <span style="font-size:11px;font-weight:700;color:#a8b2c8;text-transform:uppercase;letter-spacing:0.5px;">{label}</span>
+                        <span style="font-size:10px;font-weight:700;color:{util_color};">{r['util']:.0f}% of expected</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;font-family:JetBrains Mono;font-size:13px;margin-bottom:4px;">
+                        <span style="color:#10b981;">L: ${r['low']:,.2f}</span>
+                        <span style="color:#f0b90b;font-weight:700;">${r['range']:,.2f}</span>
+                        <span style="color:#ef4444;">H: ${r['high']:,.2f}</span>
+                    </div>
+                    <div class="prob-bar" style="height:8px;margin:6px 0;">
+                        <div class="prob-fill" style="width:{bar_width}%;background:linear-gradient(90deg,#10b981,{util_color});border-radius:3px;"></div>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;font-size:10px;color:#6b7a99;">
+                        <span>Avg: ${r['avg']:,.2f}</span>
+                        <span>ATR Expected: ${r['expected']:,.2f}</span>
+                    </div>
+                </div>""", unsafe_allow_html=True)
+
+        # ── MULTI-TIMEFRAME PROBABILITY ──
+        tt_mtf = tooltip("Probability", "Directional Probability")
+        st.markdown(f"""<div class="section-header" style="--section-accent: #a855f7;">
+            <span class="section-title">{tt_mtf}</span>
+            <span class="pill pill-model">DAILY / WEEKLY / MONTHLY</span>
+        </div>""", unsafe_allow_html=True)
+
+        prob_cols = st.columns(3)
+        for pcol, (tf_key, tf_label) in zip(prob_cols, [('daily', 'Daily (1-2D)'), ('weekly', 'Weekly (5D)'), ('monthly', 'Monthly (20D)')]):
+            p = mtf_probs[tf_key]
+            bull_pct = p['bullish']
+            bear_pct = p['bearish']
+            bias = p['bias']
+            rationale = p['rationale']
+            b_color = "#10b981" if bias == "BULLISH" else "#ef4444" if bias == "BEARISH" else "#f59e0b"
+            b_bg = f"rgba({16 if bias == 'BULLISH' else 239 if bias == 'BEARISH' else 245},{185 if bias == 'BULLISH' else 68 if bias == 'BEARISH' else 158},{129 if bias == 'BULLISH' else 68 if bias == 'BEARISH' else 11},0.12)"
+            with pcol:
+                st.markdown(f"""<div class="intel-card" style="padding:14px 16px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                        <span style="font-size:11px;font-weight:700;color:#a8b2c8;text-transform:uppercase;letter-spacing:0.5px;">{tf_label}</span>
+                        <span style="font-size:9px;font-weight:800;padding:3px 10px;border-radius:4px;background:{b_bg};color:{b_color};">{bias}</span>
+                    </div>
+                    <div class="prob-row">
+                        <span class="prob-label" style="color:#10b981;">Bull</span>
+                        <div class="prob-track"><div class="prob-fill" style="width:{bull_pct}%;background:linear-gradient(90deg,#10b981,#059669);"></div></div>
+                        <span class="prob-val" style="color:#10b981;">{bull_pct}%</span>
+                    </div>
+                    <div class="prob-row">
+                        <span class="prob-label" style="color:#ef4444;">Bear</span>
+                        <div class="prob-track"><div class="prob-fill" style="width:{bear_pct}%;background:linear-gradient(90deg,#ef4444,#dc2626);"></div></div>
+                        <span class="prob-val" style="color:#ef4444;">{bear_pct}%</span>
+                    </div>
+                    <div style="font-size:10px;color:#6b7a99;margin-top:6px;font-style:italic;">{rationale}</div>
+                </div>""", unsafe_allow_html=True)
+
+        # ── DAILY KEY LEVELS — The Game Plan ──
+        bull_d = sum(1 for d in drivers if d[2] == "BULLISH")
+        bear_d = sum(1 for d in drivers if d[2] == "BEARISH")
+        if bull_d > bear_d + 1:
+            bias_label, bias_color, bias_bg = "BULLISH", "#10b981", "rgba(16,185,129,0.12)"
+        elif bear_d > bull_d + 1:
+            bias_label, bias_color, bias_bg = "BEARISH", "#ef4444", "rgba(239,68,68,0.12)"
+        else:
+            bias_label, bias_color, bias_bg = "NEUTRAL", "#f59e0b", "rgba(245,158,11,0.12)"
+
+        st.markdown(f"""<div class="section-header" style="--section-accent: #f0b90b;">
+            <div>
+                <span class="section-title">Daily Key Levels</span>
+                <div style="display:flex;align-items:center;gap:10px;margin-top:6px;">
+                    <span style="font-size:10px;font-weight:800;padding:4px 12px;border-radius:4px;background:{bias_bg};color:{bias_color};letter-spacing:0.5px;">
+                        Session Bias: {bias_label}</span>
+                    <span style="font-size:9px;color:#5a6a8a;letter-spacing:0.5px;">
+                        Shared with Gold Intel Daily Brief</span>
+                </div>
+            </div>
+            <span class="pill pill-live">GAME PLAN</span>
+        </div>""", unsafe_allow_html=True)
+
+        lv1, lv2, lv3, lv4 = st.columns(4)
+
+        with lv1:
+            st.markdown(f"""<div class="intel-card" style="padding:12px 14px;">
+                <div style="font-size:10px;font-weight:700;color:#a8b2c8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Session Levels</div>
+                <div class="level-row"><span style="color:#6b7a99;font-size:10px;">Today Open</span>
+                    <span style="font-family:JetBrains Mono;font-size:12px;color:#e8ecf4;">${key_levels['today_open']:,.2f}</span></div>
+                <div class="level-row"><span style="color:#6b7a99;font-size:10px;">Today High</span>
+                    <span style="font-family:JetBrains Mono;font-size:12px;color:#10b981;">${key_levels['today_high']:,.2f}</span></div>
+                <div class="level-row"><span style="color:#6b7a99;font-size:10px;">Today Low</span>
+                    <span style="font-family:JetBrains Mono;font-size:12px;color:#ef4444;">${key_levels['today_low']:,.2f}</span></div>
+                <div style="border-top:1px solid #1e2745;margin:6px 0;"></div>
+                <div class="level-row"><span style="color:#f0b90b;font-size:10px;font-weight:600;">Prev Day High</span>
+                    <span style="font-family:JetBrains Mono;font-size:12px;color:#f0b90b;">${key_levels['pdh']:,.2f}</span></div>
+                <div class="level-row"><span style="color:#f0b90b;font-size:10px;font-weight:600;">Prev Day Low</span>
+                    <span style="font-family:JetBrains Mono;font-size:12px;color:#f0b90b;">${key_levels['pdl']:,.2f}</span></div>
+                <div class="level-row"><span style="color:#f0b90b;font-size:10px;font-weight:600;">Prev Day Close</span>
+                    <span style="font-family:JetBrains Mono;font-size:12px;color:#f0b90b;">${key_levels['pdc']:,.2f}</span></div>
             </div>""", unsafe_allow_html=True)
 
+        with lv2:
+            st.markdown(f"""<div class="intel-card" style="padding:12px 14px;">
+                <div style="font-size:10px;font-weight:700;color:#a8b2c8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Pivot Points</div>
+                <div class="level-row"><span style="color:#ef4444;font-size:10px;">R3</span>
+                    <span style="font-family:JetBrains Mono;font-size:12px;color:#ef4444;">${pivots['R3']:,.2f}</span></div>
+                <div class="level-row"><span style="color:#ef4444;font-size:10px;">R2</span>
+                    <span style="font-family:JetBrains Mono;font-size:12px;color:#ef4444;">${pivots['R2']:,.2f}</span></div>
+                <div class="level-row"><span style="color:#ef4444;font-size:10px;">R1</span>
+                    <span style="font-family:JetBrains Mono;font-size:12px;color:#ef4444;">${pivots['R1']:,.2f}</span></div>
+                <div class="level-row" style="background:rgba(240,185,11,0.08);border-radius:4px;padding:4px 6px;">
+                    <span style="color:#f0b90b;font-size:10px;font-weight:700;">PIVOT</span>
+                    <span style="font-family:JetBrains Mono;font-size:12px;color:#f0b90b;font-weight:700;">${pivots['PP']:,.2f}</span></div>
+                <div class="level-row"><span style="color:#10b981;font-size:10px;">S1</span>
+                    <span style="font-family:JetBrains Mono;font-size:12px;color:#10b981;">${pivots['S1']:,.2f}</span></div>
+                <div class="level-row"><span style="color:#10b981;font-size:10px;">S2</span>
+                    <span style="font-family:JetBrains Mono;font-size:12px;color:#10b981;">${pivots['S2']:,.2f}</span></div>
+                <div class="level-row"><span style="color:#10b981;font-size:10px;">S3</span>
+                    <span style="font-family:JetBrains Mono;font-size:12px;color:#10b981;">${pivots['S3']:,.2f}</span></div>
+            </div>""", unsafe_allow_html=True)
+
+        with lv3:
+            sr_html = ""
+            if signal_sr_levels:
+                for lvl in sorted(signal_sr_levels, key=lambda x: x['price'], reverse=True)[:6]:
+                    lvl_color = "#ef4444" if lvl['type'] == 'resistance' else "#10b981"
+                    lvl_icon = "R" if lvl['type'] == 'resistance' else "S"
+                    sr_html += f"""<div class="level-row">
+                        <span style="color:{lvl_color};font-size:10px;">{lvl_icon} ({lvl['touches']}x)</span>
+                        <span style="font-family:JetBrains Mono;font-size:12px;color:{lvl_color};">${lvl['price']:,.2f}</span>
+                    </div>"""
+            else:
+                sr_html = '<div style="font-size:11px;color:#6b7a99;padding:6px 0;">No S/R zones computed</div>'
+
+            round_html = ""
+            for rn in key_levels['round_numbers']:
+                round_html += f"""<div class="level-row">
+                    <span style="color:#a855f7;font-size:10px;">Psych</span>
+                    <span style="font-family:JetBrains Mono;font-size:12px;color:#a855f7;">${rn:,.0f}</span>
+                </div>"""
+
+            st.markdown(f"""<div class="intel-card" style="padding:12px 14px;">
+                <div style="font-size:10px;font-weight:700;color:#a8b2c8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">4H S/R Zones (Signal Engine)</div>
+                {sr_html}
+                <div style="border-top:1px solid #1e2745;margin:6px 0;"></div>
+                <div style="font-size:10px;font-weight:700;color:#a8b2c8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Round Numbers</div>
+                {round_html}
+            </div>""", unsafe_allow_html=True)
+
+        with lv4:
+            dxy_info = f"${key_levels['dxy']['value']}" if key_levels['dxy']['value'] else "N/A"
+            dxy_delta = f"({key_levels['dxy']['change_pct']:+.2f}%)" if key_levels['dxy']['change_pct'] else ""
+            tny_info = f"{key_levels['tny']['value']}%" if key_levels['tny']['value'] else "N/A"
+            tny_delta = f"({key_levels['tny']['change']:+.2f})" if key_levels['tny']['change'] else ""
+
+            st.markdown(f"""<div class="intel-card" style="padding:12px 14px;">
+                <div style="font-size:10px;font-weight:700;color:#a8b2c8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Anchors</div>
+                <div class="level-row"><span style="color:#3b82f6;font-size:10px;">Weekly Open</span>
+                    <span style="font-family:JetBrains Mono;font-size:12px;color:#3b82f6;">${key_levels['weekly_open']:,.2f}</span></div>
+                <div class="level-row"><span style="color:#3b82f6;font-size:10px;">Monthly Open</span>
+                    <span style="font-family:JetBrains Mono;font-size:12px;color:#3b82f6;">${key_levels['monthly_open']:,.2f}</span></div>
+                <div style="border-top:1px solid #1e2745;margin:6px 0;"></div>
+                <div style="font-size:10px;font-weight:700;color:#a8b2c8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Macro Snapshot</div>
+                <div class="level-row"><span style="color:#6b7a99;font-size:10px;">DXY</span>
+                    <span style="font-family:JetBrains Mono;font-size:12px;color:#e8ecf4;">{dxy_info} <span style="font-size:10px;color:#6b7a99;">{dxy_delta}</span></span></div>
+                <div class="level-row"><span style="color:#6b7a99;font-size:10px;">US 10Y Yield</span>
+                    <span style="font-family:JetBrains Mono;font-size:12px;color:#e8ecf4;">{tny_info} <span style="font-size:10px;color:#6b7a99;">{tny_delta}</span></span></div>
+                <div style="border-top:1px solid #1e2745;margin:6px 0;"></div>
+                <div style="font-size:9px;color:#6b7a99;line-height:1.5;">
+                    Data exported to <b style="color:#a8b2c8;">daily_brief_data.json</b><br>
+                    Gold Intel Daily skill reads this file.
+                </div>
+            </div>""", unsafe_allow_html=True)
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # TAB 2 — TRADE SIGNALS
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    with tab_signals:
+
+        # ── SIGNAL ENGINE ──
+        trend_color_map = {
+            "BULLISH": ("#10b981", "rgba(16,185,129,0.12)"),
+            "WEAK_BULLISH": ("#10b981", "rgba(16,185,129,0.08)"),
+            "BEARISH": ("#ef4444", "rgba(239,68,68,0.12)"),
+            "WEAK_BEARISH": ("#ef4444", "rgba(239,68,68,0.08)"),
+            "NEUTRAL": ("#f59e0b", "rgba(245,158,11,0.12)"),
+        }
+        tc, tbg = trend_color_map.get(signal_trend, ("#f59e0b", "rgba(245,158,11,0.12)"))
+        trend_label = signal_trend.replace("_", " ")
+
+        st.markdown(f"""<div class="section-header" style="--section-accent: {tc};">
+            <div>
+                <span class="section-title">Trade Signals</span>
+                <div style="display:flex;align-items:center;gap:10px;margin-top:6px;">
+                    <span class="signal-trend-badge" style="background:{tbg};color:{tc};letter-spacing:0.5px;">Daily Trend: {trend_label}</span>
+                    <span style="font-size:9px;color:#5a6a8a;">Multi-timeframe: Daily &gt; 4H zones &gt; 15m entry patterns</span>
+                </div>
+            </div>
+            <span class="pill pill-live">SIGNAL ENGINE</span>
+        </div>""", unsafe_allow_html=True)
+
+        if trade_signals:
+            sig_cols = st.columns(min(len(trade_signals), 3))
+            for i, signal in enumerate(trade_signals[:6]):
+                formatted = format_signal_for_beginner(signal)
+                col = sig_cols[i % min(len(trade_signals), 3)]
+
+                direction = signal['direction'].lower()
+                conf = signal.get('confidence', 'LOW')
+                conf_class = 'conf-high' if conf == 'HIGH' else 'conf-med' if conf == 'MEDIUM' else 'conf-low'
+                score = signal.get('score', 0)
+
+                if score >= 80:
+                    ring_bg, ring_border, ring_color = "rgba(16,185,129,0.15)", "#10b981", "#10b981"
+                elif score >= 65:
+                    ring_bg, ring_border, ring_color = "rgba(245,158,11,0.15)", "#f59e0b", "#f59e0b"
+                else:
+                    ring_bg, ring_border, ring_color = "rgba(107,122,153,0.15)", "#6b7a99", "#6b7a99"
+
+                reasons_html = ""
+                for reason in formatted.get('reasons', []):
+                    reasons_html += f'<span class="signal-reason-tag">{reason}</span>'
+
+                levels_html = ""
+                if formatted.get('entry'):
+                    tt_rr = tooltip("Risk/Reward", "Risk:Reward")
+                    levels_html = f"""<div class="signal-levels">
+                        <div class="signal-level-item">
+                            <div class="signal-level-label">Entry</div>
+                            <div class="signal-level-value" style="color:#e8ecf4;">{formatted['entry']}</div>
+                        </div>
+                        <div class="signal-level-item">
+                            <div class="signal-level-label">Stop Loss</div>
+                            <div class="signal-level-value" style="color:#ef4444;">${signal['stop_loss']:,.2f}</div>
+                        </div>
+                        <div class="signal-level-item">
+                            <div class="signal-level-label">Take Profit</div>
+                            <div class="signal-level-value" style="color:#10b981;">${signal['take_profit']:,.2f}</div>
+                        </div>
+                        <div class="signal-level-item">
+                            <div class="signal-level-label">{tt_rr}</div>
+                            <div class="signal-level-value" style="color:#f0b90b;">{formatted.get('rr', 'N/A')}</div>
+                        </div>
+                    </div>"""
+
+                time_str = signal['time'].strftime('%b %d, %H:%M') if hasattr(signal['time'], 'strftime') else str(signal['time'])[:16]
+
+                with col:
+                    st.markdown(f"""<div class="signal-card {direction}">
+                        <div class="signal-score-ring" style="background:{ring_bg};border:2px solid {ring_border};color:{ring_color};">
+                            {score}
+                        </div>
+                        <div class="signal-badge {direction}">{formatted['emoji']} {signal['direction']}</div>
+                        <span class="signal-conf {conf_class}">{conf} confidence</span>
+                        <div style="font-size:10px;color:#6b7a99;margin-top:4px;">{time_str} · {signal['timeframe']} · {signal.get('session', '')} · {signal['pattern_name']}</div>
+                        <div class="signal-explanation">{formatted['explanation']}</div>
+                        {levels_html}
+                        <div class="signal-reasons">{reasons_html}</div>
+                    </div>""", unsafe_allow_html=True)
+        else:
+            st.markdown("""<div class="signal-empty">
+                <div style="font-size:24px;margin-bottom:8px;">&#9203;</div>
+                <div style="font-weight:600;color:#a8b2c8;margin-bottom:4px;">No Active Signals</div>
+                <div>No candle patterns detected at key support/resistance levels right now.<br>
+                The engine scans 15-minute bars at 4H-derived S/R zones aligned with the daily trend.</div>
+            </div>""", unsafe_allow_html=True)
+
+        # ── FULL-WIDTH TRADINGVIEW CHART ──
+        tv_html = """
+        <html><head><style>
+          *{margin:0;padding:0;} html,body{width:100%;height:100%;overflow:hidden;background:#0a0e17;}
+          .tradingview-widget-container{width:100%;height:100%;}
+          .tradingview-widget-container__widget{width:100%;height:100%;}
+        </style></head><body>
+        <div class="tradingview-widget-container">
+          <div class="tradingview-widget-container__widget"></div>
+          <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>
+          {
+            "autosize":true,
+            "symbol":"OANDA:XAUUSD",
+            "interval":"15",
+            "timezone":"Etc/UTC",
+            "theme":"dark",
+            "style":"1",
+            "locale":"en",
+            "backgroundColor":"rgba(10,14,23,1)",
+            "gridColor":"rgba(30,39,69,0.4)",
+            "withdateranges":true,
+            "hide_side_toolbar":false,
+            "allow_symbol_change":true,
+            "details":false,
+            "hotlist":false,
+            "calendar":false,
+            "studies":["BB@tv-basicstudies","Volume@tv-basicstudies"],
+            "support_host":"https://www.tradingview.com"
+          }
+          </script>
+        </div>
+        </body></html>
+        """
+        st.components.v1.html(tv_html, height=650)
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # TAB 3 — INTELLIGENCE
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    with tab_intel:
+
+        col_analysis, col_drivers, col_data = st.columns([2, 1, 1])
+
+        with col_analysis:
+            # ── 3-TIER ANALYSIS ──
+            st.markdown("""<div class="section-header" style="--section-accent: #a855f7;">
+                <span class="section-title">Analysis</span>
+                <span class="pill pill-model">3-TIER</span>
+            </div>""", unsafe_allow_html=True)
+
+            tier = st.radio("Perspective", ["Beginner", "Intermediate", "Pro"], horizontal=True, label_visibility="collapsed")
+
+            if tier == "Beginner":
+                st.markdown(f'<div class="tier-tab tier-beginner"><div class="tier-label" style="color:#3b82f6;">Beginner View</div>{beginner}</div>', unsafe_allow_html=True)
+            elif tier == "Intermediate":
+                st.markdown(f'<div class="tier-tab tier-intermediate"><div class="tier-label" style="color:#f59e0b;">Intermediate View</div>{intermediate}</div>', unsafe_allow_html=True)
+            else:
+                st.markdown(f'<div class="tier-tab tier-pro"><div class="tier-label" style="color:#a855f7;">Pro View</div>{pro}</div>', unsafe_allow_html=True)
+
+        with col_drivers:
+            # ── MACRO DRIVERS ──
+            tt_macro = tooltip("Macro Drivers")
+            st.markdown(f"""<div class="intel-card"><h3 style="margin-bottom:14px;">{tt_macro}
+                <span class="pill pill-data">AUTO-COMPUTED</span></h3>""", unsafe_allow_html=True)
+            # Map driver names to glossary terms for tooltips
+            _driver_tt_map = {"USD (DXY)": "DXY", "US 10Y Yield": "Yield", "VIX (Fear Index)": "VIX",
+                              "Gold Trend (SMA 20/50)": "SMA", "S&P 500": None, "Crude Oil": None}
+            for d in drivers:
+                name, detail, impact, why = d[0], d[1], d[2], d[3]
+                tag_class = "tag-bull" if impact == "BULLISH" else "tag-bear" if impact == "BEARISH" else "tag-mixed"
+                why_html = f'<br><small style="color:#8892ab;font-style:italic;">{why}</small>' if why else ''
+                icon_html = get_instrument_icon(name)
+                tt_key = _driver_tt_map.get(name)
+                name_html = tooltip(tt_key, name) if tt_key else name
+                st.markdown(f"""<div class="driver-row">
+                    <span>{icon_html} {name_html}<br><small style="color:#6b7a99">{detail}</small>{why_html}</span>
+                    <span class="{tag_class}">{impact}</span>
+                </div>""", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            # ── CORRELATIONS ──
+            tt_corr = tooltip("Correlation", "30D Correlations")
+            st.markdown(f"""<div class="intel-card"><h3>{tt_corr}
+                <span class="pill pill-model">COMPUTED</span></h3>""", unsafe_allow_html=True)
+            for name, val in correlations.items():
+                color = "#10b981" if val > 0.3 else "#ef4444" if val < -0.3 else "#6b7a99"
+                bg = "rgba(16,185,129,0.12)" if val > 0.3 else "rgba(239,68,68,0.12)" if val < -0.3 else "rgba(107,122,153,0.08)"
+                corr_icon = get_instrument_icon(name)
+                st.markdown(f"""<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;align-items:center;">
+                    <span>{corr_icon} {name}</span>
+                    <span class="corr-cell" style="background:{bg};color:{color};padding:2px 10px;border-radius:3px;min-width:55px;">{val:+.2f}</span>
+                </div>""", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        with col_data:
+            # ── KEY LEVELS ──
+            tt_pivot = tooltip("Pivot", "Key Levels")
+            st.markdown(f"""<div class="intel-card"><h3>{tt_pivot}
+                <span class="pill pill-data">PIVOT + S/R</span></h3>""", unsafe_allow_html=True)
+            pcol1, pcol2 = st.columns(2)
+            with pcol1:
+                tt_sup = tooltip("Support")
+                st.markdown(f"<b style='color:#10b981;font-size:11px;'>{tt_sup}</b>", unsafe_allow_html=True)
+                for label, val in [("Pivot S1", pivots['S1']), ("Pivot S2", pivots['S2']), ("Pivot S3", pivots['S3'])]:
+                    st.markdown(f'<div class="level-row"><span style="color:#10b981;font-family:JetBrains Mono">${val:,.0f}</span><span style="font-size:9px;color:#6b7a99">{label}</span></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="level-row"><span style="color:#10b981;font-family:JetBrains Mono">${gold_df["SMA_20"].iloc[-1]:,.0f}</span><span style="font-size:9px;color:#6b7a99">SMA 20</span></div>', unsafe_allow_html=True)
+            with pcol2:
+                tt_res = tooltip("Resistance")
+                st.markdown(f"<b style='color:#ef4444;font-size:11px;'>{tt_res}</b>", unsafe_allow_html=True)
+                for label, val in [("Pivot R1", pivots['R1']), ("Pivot R2", pivots['R2']), ("Pivot R3", pivots['R3'])]:
+                    st.markdown(f'<div class="level-row"><span style="color:#ef4444;font-family:JetBrains Mono">${val:,.0f}</span><span style="font-size:9px;color:#6b7a99">{label}</span></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="level-row"><span style="color:#ef4444;font-family:JetBrains Mono">${gold_df["BB_upper"].iloc[-1]:,.0f}</span><span style="font-size:9px;color:#6b7a99">BB Upper</span></div>', unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            # ── PROBABILITY ──
+            tt_prob = tooltip("Probability", "30-Day Targets")
+            st.markdown(f"""<div class="intel-card"><h3>{tt_prob}
+                <span class="pill pill-model">PROBABILITY</span></h3>""", unsafe_allow_html=True)
+            st.markdown('<small style="color:#6b7a99">Based on ATR + historical volatility</small>', unsafe_allow_html=True)
+            st.markdown("<b style='color:#10b981;font-size:10px;'>UPSIDE</b>", unsafe_allow_html=True)
+            for price, prob in up_probs:
+                st.markdown(f"""<div class="prob-row">
+                    <span style="width:60px;font-family:JetBrains Mono;color:#10b981;font-size:11px">${price:,.0f}</span>
+                    <div class="prob-bar"><div class="prob-fill" style="width:{prob}%;background:#10b981;"></div></div>
+                    <span style="width:35px;text-align:right;font-family:JetBrains Mono;color:#10b981;font-size:11px">{prob:.0f}%</span>
+                </div>""", unsafe_allow_html=True)
+            st.markdown("<b style='color:#ef4444;font-size:10px;margin-top:8px;display:block;'>DOWNSIDE</b>", unsafe_allow_html=True)
+            for price, prob in down_probs:
+                st.markdown(f"""<div class="prob-row">
+                    <span style="width:60px;font-family:JetBrains Mono;color:#ef4444;font-size:11px">${price:,.0f}</span>
+                    <div class="prob-bar"><div class="prob-fill" style="width:{prob}%;background:#ef4444;"></div></div>
+                    <span style="width:35px;text-align:right;font-family:JetBrains Mono;color:#ef4444;font-size:11px">{prob:.0f}%</span>
+                </div>""", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # TAB 4 — NEWS & EVENTS
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    with tab_news:
+
+        st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+        st.markdown("""<div class="section-header" style="--section-accent: #a855f7;">
+            <div>
+                <span class="section-title">Volume Spike Detector</span>
+                <div style="font-size:9px;color:#5a6a8a;margin-top:4px;">High-volume candles matched to news, economic events &amp; correlated asset moves</div>
+            </div>
+            <span class="pill pill-model">MULTI-SOURCE</span>
+        </div>""", unsafe_allow_html=True)
+
+        if spikes_correlated:
+            for spike in spikes_correlated[:10]:
+                dir_class = "spike-up" if spike['direction'] == 'UP' else "spike-down"
+                dir_arrow = "▲" if spike['direction'] == 'UP' else "▼"
+
+                st.markdown(f"""<div class="spike-card">
+                    <div class="spike-header">
+                        <span class="spike-date">{spike['date']}</span>
+                        <span>
+                            <span class="spike-vol {dir_class}">{dir_arrow} {spike['direction']} ${abs(spike['change']):,.2f} ({spike['change_pct']:+.2f}%)</span>
+                            &nbsp;
+                            <span style="font-size:10px;color:#f0b90b;font-weight:600;">{spike['vol_ratio']:.1f}x VOL</span>
+                        </span>
+                    </div>
+                    <div style="font-size:11px;color:#a8b2c8;">
+                        O: ${spike['open']:,.2f} &nbsp; H: ${spike['high']:,.2f} &nbsp; L: ${spike['low']:,.2f} &nbsp; C: ${spike['close']:,.2f}
+                    </div>
+                """, unsafe_allow_html=True)
+
+                # ── Correlated Asset Moves (same-day context) ──
+                asset_moves = spike.get('asset_moves', {})
+                if asset_moves:
+                    moves_html = '<div style="margin-top:8px;padding-top:6px;border-top:1px solid #263054;">'
+                    moves_html += '<div style="font-size:9px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Same-Day Moves</div>'
+                    moves_html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">'
+                    for asset_name, mv in asset_moves.items():
+                        mv_color = "#10b981" if mv['change_pct'] >= 0 else "#ef4444"
+                        mv_arrow = "▲" if mv['change_pct'] >= 0 else "▼"
+                        asset_icon = get_instrument_icon(asset_name)
+                        moves_html += f'<span style="font-size:10px;padding:3px 8px;background:rgba(26,34,64,0.5);border-radius:4px;display:inline-flex;align-items:center;gap:4px;">'
+                        moves_html += f'{asset_icon}<span style="color:#a8b2c8;">{asset_name}</span> '
+                        moves_html += f'<span style="color:{mv_color};font-family:JetBrains Mono;font-weight:600;">{mv_arrow}{mv["change_pct"]:+.2f}%</span></span>'
+                    moves_html += '</div></div>'
+                    st.markdown(moves_html, unsafe_allow_html=True)
+
+                # ── Economic Calendar Events ──
+                econ_evts = spike.get('econ_events', [])
+                if econ_evts:
+                    st.markdown('<div style="margin-top:6px;padding-top:6px;border-top:1px solid #263054;">', unsafe_allow_html=True)
+                    st.markdown('<div style="font-size:9px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Economic Events</div>', unsafe_allow_html=True)
+                    for evt in econ_evts[:2]:
+                        impact_color = "#ef4444" if evt['impact'] == 'HIGH' else "#f59e0b" if evt['impact'] == 'MEDIUM' else "#6b7a99"
+                        impact_bg = f"rgba({239 if evt['impact']=='HIGH' else 245 if evt['impact']=='MEDIUM' else 107},{68 if evt['impact']=='HIGH' else 158 if evt['impact']=='MEDIUM' else 122},{68 if evt['impact']=='HIGH' else 11 if evt['impact']=='MEDIUM' else 153},0.12)"
+                        instr_tags = " ".join(f'<span class="rss-tag rss-tag-{i.lower()}">{i}</span>' for i in evt.get('instruments', []))
+                        st.markdown(f"""<div style="font-size:11px;padding:3px 0;display:flex;align-items:center;gap:6px;">
+                            <span style="font-size:8px;font-weight:800;padding:2px 6px;border-radius:3px;background:{impact_bg};color:{impact_color};">{evt['impact']}</span>
+                            <span style="color:#e8ecf4;">{html_escape(evt['title'][:80])}</span>
+                            {instr_tags}
+                        </div>""", unsafe_allow_html=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+                # ── News Articles ──
+                if spike['news']:
+                    st.markdown('<div style="margin-top:6px;padding-top:6px;border-top:1px solid #263054;">', unsafe_allow_html=True)
+                    st.markdown('<div style="font-size:9px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Related Headlines</div>', unsafe_allow_html=True)
+                    for article in spike['news']:
+                        source = f" — {article['source']}" if article['source'] else ""
+                        safe_link = article['link'] if article['link'].startswith(('http://', 'https://')) else '#'
+                        st.markdown(f"""<div style="font-size:11px;padding:3px 0;">
+                            📰 <a href="{safe_link}" target="_blank" rel="noopener noreferrer" style="color:#3b82f6;text-decoration:none;">{html_escape(article['title'])}</a>
+                            <span style="color:#6b7a99;font-size:9px;">{source}</span>
+                        </div>""", unsafe_allow_html=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+                # ── Fallback: no news AND no events ──
+                if not spike['news'] and not econ_evts and not asset_moves:
+                    st.markdown('<div style="font-size:11px;color:#6b7a99;margin-top:4px;font-style:italic;">No catalyst identified — likely driven by options/futures expiry, institutional repositioning, or overseas session flows. Check economic calendar for scheduled releases.</div>', unsafe_allow_html=True)
+                elif not spike['news'] and not econ_evts:
+                    st.markdown('<div style="font-size:11px;color:#6b7a99;margin-top:4px;font-style:italic;">No headline catalyst found — move likely driven by correlated asset flows shown above.</div>', unsafe_allow_html=True)
+
+                st.markdown('</div>', unsafe_allow_html=True)
+        else:
+            st.info("No significant volume spikes detected in recent data.")
+
+        st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+        news_col, cal_col = st.columns([1, 1])
+
+        with news_col:
+            st.markdown("""<div class="section-header" style="--section-accent: #ef4444;">
+                <span class="section-title">Live News Feed</span>
+                <span class="pill pill-live">RSS · AUTO-REFRESH</span>
+            </div>""", unsafe_allow_html=True)
+            if news:
+                # Instrument impact keyword mapping
+                _impact_rules = {
+                    'XAU': (['gold', 'xau', 'bullion', 'precious metal', 'safe haven', 'gold price', 'gold demand'], 'rss-tag-xau'),
+                    'USD': (['dollar', 'usd', 'dxy', 'fed', 'federal reserve', 'interest rate', 'rate hike', 'rate cut', 'fomc', 'powell', 'treasury'], 'rss-tag-usd'),
+                    'OIL': (['oil', 'crude', 'opec', 'brent', 'wti', 'petroleum', 'energy'], 'rss-tag-oil'),
+                    'BOND': (['bond', 'yield', 'treasury', '10-year', '10y', 'debt', 'sovereign'], 'rss-tag-bond'),
+                    'GEO': (['war', 'attack', 'strike', 'nuclear', 'bomb', 'missile', 'invasion', 'crisis', 'emergency', 'sanctions', 'conflict', 'geopolitical', 'tariff', 'trade war'], 'rss-tag-geo'),
+                    'SPX': (['stock', 's&p', 'nasdaq', 'dow', 'equity', 'wall street', 'rally', 'selloff', 'correction', 'bear market', 'bull market'], 'rss-tag-spx'),
+                }
+                for article in news[:20]:
+                    date_str = article['published'].strftime('%b %d, %H:%M') if article['published'] else ""
+                    source = f" — {article['source']}" if article['source'] else ""
+                    title_lower = article['title'].lower()
+                    # Detect instrument impacts
+                    impact_tags_html = ""
+                    is_breaking = False
+                    for tag_label, (keywords, tag_class) in _impact_rules.items():
+                        if any(kw in title_lower for kw in keywords):
+                            impact_tags_html += f'<span class="rss-tag {tag_class}">{tag_label}</span>'
+                            if tag_label == 'GEO':
+                                is_breaking = True
+                    breaking_class = ' rss-breaking' if is_breaking else ''
+                    prefix = '<span style="color:#ef4444;font-weight:700;font-size:10px;">⚡ BREAKING </span>' if is_breaking else ''
+                    safe_link = article['link'] if article['link'].startswith(('http://', 'https://')) else '#'
+                    st.markdown(f"""<div class="rss-item{breaking_class}">
+                        <div class="rss-title">
+                            {prefix}<a href="{safe_link}" target="_blank" rel="noopener noreferrer">{article['title']}</a>
+                            <div class="rss-impact-tags">{impact_tags_html}</div>
+                            <div style="font-size:9px;color:#6b7a99;margin-top:2px;">{date_str}{source}</div>
+                        </div>
+                    </div>""", unsafe_allow_html=True)
+            else:
+                st.markdown('<div style="color:#6b7a99;font-size:12px;padding:8px;">No news available. Check internet connection.</div>', unsafe_allow_html=True)
+
+        with cal_col:
+            # Correlated instruments summary
+            st.markdown("""<div class="section-header" style="--section-accent: #3b82f6;">
+                <span class="section-title">Correlated Instruments</span>
+                <span class="pill pill-data">SNAPSHOT</span>
+            </div>""", unsafe_allow_html=True)
+            for name, df in corr_data.items():
+                if len(df) < 2:
+                    continue
+                cur = df['Close'].iloc[-1]
+                prv = df['Close'].iloc[-2]
+                chg = ((cur / prv) - 1) * 100
+                color = "#10b981" if chg >= 0 else "#ef4444"
+                st.markdown(f"""<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #1e2745;font-size:12px;">
+                    <span style="color:#a8b2c8">{name}</span>
+                    <span>
+                        <span style="font-family:JetBrains Mono;color:#e8ecf4">{cur:,.2f}</span>
+                        <span style="font-family:JetBrains Mono;color:{color};margin-left:8px">{chg:+.2f}%</span>
+                    </span>
+                </div>""", unsafe_allow_html=True)
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # TAB 5 — SMC ENGINE (Placeholder)
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    with tab_smc:
+        st.markdown("""<div class="intel-card" style="padding:30px;text-align:center;">
+            <div style="font-size:32px;margin-bottom:12px;">🔲</div>
+            <h3 style="color:#f0b90b;margin-bottom:8px;">Smart Money Concepts Engine</h3>
+            <p style="color:#8892ab;font-size:13px;line-height:1.6;">
+                Order Blocks · Liquidity Sweeps · Break of Structure · Fair Value Gaps<br>
+                Multi-timeframe cascade: Daily → 4H → 1H → 15m → 5m<br><br>
+                <span style="color:#f59e0b;font-weight:600;">Coming Soon</span> — This module will detect institutional order flow patterns
+                across timeframes and integrate with the signal engine for higher-conviction entries.
+            </p>
+        </div>""", unsafe_allow_html=True)
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # TAB 6 — BACKTEST ENGINE (Placeholder)
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    with tab_backtest:
+        st.markdown("""<div class="intel-card" style="padding:30px;text-align:center;">
+            <div style="font-size:32px;margin-bottom:12px;">📈</div>
+            <h3 style="color:#f0b90b;margin-bottom:8px;">Signal Backtesting Engine</h3>
+            <p style="color:#8892ab;font-size:13px;line-height:1.6;">
+                Win Rate · Average R:R · Max Drawdown · Profit Factor<br>
+                Per-pattern breakdown · Session performance · Equity curve<br><br>
+                <span style="color:#f59e0b;font-weight:600;">Coming Soon</span> — This module will backtest all signal engine patterns
+                against 3-6 months of historical data and show which setups actually perform.
+            </p>
+        </div>""", unsafe_allow_html=True)
+
     # ══════════════════════════════════════════════════
-    # FOOTER
+    # FOOTER (outside all tabs, at main() level)
     # ══════════════════════════════════════════════════
     st.markdown(f"""<div class="section-divider"></div>
-    <div style="text-align:center;padding:16px 0;">
-        <div style="font-size:10px;font-weight:700;color:#f0b90b;letter-spacing:2px;margin-bottom:4px;">GOLD COMMAND</div>
-        <div style="font-size:9px;color:#8a94a8;margin-bottom:4px;">Developed by <span style="color:#f0b90b;font-weight:600;">Anoop B.</span></div>
+    <div style="text-align:center;padding:20px 0;">
+        <div style="font-size:12px;font-weight:900;color:#f0b90b;letter-spacing:3px;margin-bottom:6px;">GOLD COMMAND</div>
+        <div style="font-size:10px;color:#8a94a8;margin-bottom:6px;">XAU/USD Market Intelligence Terminal&nbsp;&nbsp;·&nbsp;&nbsp;v2.0</div>
+        <div style="font-size:9px;color:#5a6a8a;margin-bottom:8px;">Developed by <span style="color:#f0b90b;font-weight:600;">Anoop B.</span></div>
+        <div style="display:flex;justify-content:center;gap:20px;margin-bottom:8px;">
+            <span style="font-size:8px;color:#3d4b6b;">📊 6 Intelligence Modules</span>
+            <span style="font-size:8px;color:#3d4b6b;">🎯 Multi-TF Signal Engine</span>
+            <span style="font-size:8px;color:#3d4b6b;">🧠 Auto-Computed Macro Analysis</span>
+            <span style="font-size:8px;color:#3d4b6b;">📰 Live RSS News Feed</span>
+        </div>
         <div style="font-size:8px;color:#3d4b6b;letter-spacing:0.5px;">
-            Market Intelligence Terminal&nbsp;&nbsp;|&nbsp;&nbsp;Data: Yahoo Finance, Google News RSS&nbsp;&nbsp;|&nbsp;&nbsp;Charts: TradingView<br>
-            This is not financial advice. All data is delayed and for informational purposes only.
+            Data: Yahoo Finance, Google News RSS&nbsp;&nbsp;|&nbsp;&nbsp;Charts: TradingView&nbsp;&nbsp;|&nbsp;&nbsp;Signals: Proprietary Engine<br>
+            <span style="color:#f59e0b;">⚠️ This is not financial advice.</span> All data is delayed and for informational purposes only.
         </div>
     </div>""", unsafe_allow_html=True)
 
