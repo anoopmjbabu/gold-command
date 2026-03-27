@@ -397,6 +397,24 @@ header {visibility: hidden;}
 /* ═══ Global padding adjustment ═══ */
 .block-container { padding-top: 1.5rem !important; padding-bottom: 1rem !important; }
 
+/* ═══ Animated Instrument Icons ═══ */
+.icon-wrap { display: inline-flex; align-items: center; vertical-align: middle; margin-right: 6px; }
+.icon-wrap svg { width: 18px; height: 18px; }
+@keyframes shimmer { 0%,100%{opacity:0.7;} 50%{opacity:1;} }
+@keyframes pulse-icon { 0%,100%{transform:scale(1);} 50%{transform:scale(1.12);} }
+@keyframes flicker { 0%,100%{opacity:0.85;transform:scaleY(1);} 30%{opacity:1;transform:scaleY(1.08);} 60%{opacity:0.9;transform:scaleY(0.95);} }
+@keyframes drip { 0%,100%{transform:translateY(0);} 50%{transform:translateY(1.5px);} }
+@keyframes chart-draw { 0%{stroke-dashoffset:60;} 100%{stroke-dashoffset:0;} }
+.icon-gold svg { animation: shimmer 2.5s ease-in-out infinite; }
+.icon-dollar svg { animation: pulse-icon 2s ease-in-out infinite; }
+.icon-bond svg { animation: shimmer 3s ease-in-out infinite; }
+.icon-vix svg { animation: flicker 1.2s ease-in-out infinite; }
+.icon-oil svg { animation: drip 2s ease-in-out infinite; }
+.icon-spx svg { animation: shimmer 2.5s ease-in-out infinite; }
+.icon-spx svg polyline { stroke-dasharray: 60; animation: chart-draw 2s ease-out forwards; }
+.icon-trend-up svg { animation: pulse-icon 2s ease-in-out infinite; }
+.icon-trend-down svg { animation: pulse-icon 2s ease-in-out infinite; }
+
 /* ═══ Daily Brief Card ═══ */
 .daily-brief {
     background: linear-gradient(135deg, #0d1326 0%, #131b38 50%, #0f1730 100%);
@@ -1037,6 +1055,31 @@ def generate_three_tier_analysis(df, spikes_correlated, drivers):
     return beginner, intermediate, pro
 
 
+def get_instrument_icon(name):
+    """Return animated SVG icon HTML for an instrument name."""
+    icons = {
+        # Gold bar with shimmer
+        "Gold Price": '<span class="icon-wrap icon-gold"><svg viewBox="0 0 24 24" fill="none"><path d="M4 18L7 8h10l3 10H4z" fill="#f0b90b" opacity="0.9"/><path d="M7 8L9 4h6l2 4" fill="#f5d060"/><path d="M4 18h16" stroke="#b8860b" stroke-width="1"/><line x1="9" y1="8" x2="8" y2="14" stroke="#fff" stroke-width="0.5" opacity="0.4"/></svg></span>',
+        # Dollar sign
+        "USD (DXY)": '<span class="icon-wrap icon-dollar"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#10b981" stroke-width="1.5" opacity="0.3"/><text x="12" y="16.5" text-anchor="middle" font-size="13" font-weight="bold" fill="#10b981" font-family="Arial">$</text></svg></span>',
+        # Bond / certificate
+        "US 10Y Yield": '<span class="icon-wrap icon-bond"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="2" stroke="#3b82f6" stroke-width="1.5" fill="none"/><line x1="7" y1="9" x2="17" y2="9" stroke="#3b82f6" stroke-width="1" opacity="0.5"/><line x1="7" y1="12" x2="14" y2="12" stroke="#3b82f6" stroke-width="1" opacity="0.4"/><line x1="7" y1="15" x2="11" y2="15" stroke="#3b82f6" stroke-width="1" opacity="0.3"/><circle cx="17" cy="14" r="2" stroke="#f0b90b" stroke-width="1" fill="none"/></svg></span>',
+        # VIX flame
+        "VIX (Fear Index)": '<span class="icon-wrap icon-vix"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2C12 2 7 9 7 14c0 2.8 2.2 5 5 5s5-2.2 5-5C17 9 12 2 12 2z" fill="#ef4444" opacity="0.8"/><path d="M12 8c0 0-2.5 3.5-2.5 6c0 1.4 1.1 2.5 2.5 2.5s2.5-1.1 2.5-2.5C14.5 11.5 12 8 12 8z" fill="#f59e0b" opacity="0.9"/></svg></span>',
+        # Oil droplet
+        "Crude Oil": '<span class="icon-wrap icon-oil"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3C12 3 6 11 6 15.5C6 18.5 8.7 21 12 21s6-2.5 6-5.5C18 11 12 3 12 3z" fill="#8b5cf6" opacity="0.8"/><ellipse cx="10" cy="14" rx="1.5" ry="2" fill="#a78bfa" opacity="0.5" transform="rotate(-15 10 14)"/></svg></span>',
+        # S&P 500 chart line
+        "S&P 500": '<span class="icon-wrap icon-spx"><svg viewBox="0 0 24 24" fill="none"><rect x="2" y="4" width="20" height="16" rx="2" stroke="#f59e0b" stroke-width="1" opacity="0.3" fill="none"/><polyline points="4,16 8,12 11,14 15,8 20,10" stroke="#f59e0b" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>',
+        # Gold trend up arrow
+        "Gold Trend (SMA 20/50)": '<span class="icon-wrap icon-trend-up"><svg viewBox="0 0 24 24" fill="none"><path d="M4 18L12 6l8 12" stroke="#f0b90b" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/><line x1="12" y1="6" x2="12" y2="14" stroke="#f0b90b" stroke-width="1.5" opacity="0.4"/></svg></span>',
+        # KPI icons
+        "RSI": '<span class="icon-wrap icon-bond"><svg viewBox="0 0 24 24" fill="none"><rect x="2" y="4" width="20" height="16" rx="2" stroke="#a855f7" stroke-width="1" opacity="0.3" fill="none"/><polyline points="4,14 8,10 11,13 14,8 17,11 20,7" stroke="#a855f7" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg></span>',
+        "ATR": '<span class="icon-wrap icon-bond"><svg viewBox="0 0 24 24" fill="none"><line x1="4" y1="12" x2="20" y2="12" stroke="#3b82f6" stroke-width="1" opacity="0.3"/><line x1="12" y1="5" x2="12" y2="19" stroke="#3b82f6" stroke-width="1" opacity="0.3"/><path d="M6 16L10 8l4 10 4-12" stroke="#3b82f6" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>',
+        "Session Bias": '<span class="icon-wrap icon-vix"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#f0b90b" stroke-width="1.5" fill="none" opacity="0.4"/><path d="M12 7v5l3.5 3.5" stroke="#f0b90b" stroke-width="1.5" stroke-linecap="round"/></svg></span>',
+    }
+    return icons.get(name, '')
+
+
 def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, trade_signals, signal_trend, ranges, pivots, key_levels):
     """Generate a plain-English daily brief summary for the top of the dashboard."""
     # Direction
@@ -1282,35 +1325,40 @@ def main():
     bias_kpi_color = brief_bias_color
     bias_kpi_bg = brief_bias_bg
 
+    icon_gold = get_instrument_icon("Gold Price")
+    icon_rsi = get_instrument_icon("RSI")
+    icon_atr = get_instrument_icon("ATR")
+    icon_bias = get_instrument_icon("Session Bias")
+
     st.markdown(f"""
     <div class="kpi-grid">
         <div class="kpi-card" style="--kpi-accent: #f0b90b;">
-            <div class="kpi-label">Gold Price</div>
+            <div class="kpi-label">{icon_gold} Gold Price</div>
             <div class="kpi-value" style="color: #f0b90b;">${current:,.2f}</div>
             <div class="kpi-delta {'up' if daily_chg >= 0 else 'down'}">{chg_arrow} ${abs(daily_chg):,.2f} ({daily_pct:+.1f}%)</div>
         </div>
         <div class="kpi-card" style="--kpi-accent: {rsi_color};">
-            <div class="kpi-label">RSI (14)</div>
+            <div class="kpi-label">{icon_rsi} RSI (14)</div>
             <div class="kpi-value">{rsi_val:.1f}</div>
             <div class="kpi-delta neutral" style="color:{rsi_color};background:rgba(0,0,0,0.2);">{rsi_status}</div>
         </div>
         <div class="kpi-card" style="--kpi-accent: #3b82f6;">
-            <div class="kpi-label">ATR (14)</div>
+            <div class="kpi-label">{icon_atr} ATR (14)</div>
             <div class="kpi-value">${gold_df['ATR_14'].iloc[-1]:,.0f}</div>
             <div class="kpi-delta neutral">Daily Range</div>
         </div>
         <div class="kpi-card" style="--kpi-accent: #ef4444;">
-            <div class="kpi-label">6M High</div>
+            <div class="kpi-label">{icon_gold} 6M High</div>
             <div class="kpi-value">${high_52w:,.0f}</div>
             <div class="kpi-delta {'down' if current < high_52w else 'up'}">{((current/high_52w)-1)*100:+.1f}%</div>
         </div>
         <div class="kpi-card" style="--kpi-accent: #10b981;">
-            <div class="kpi-label">6M Low</div>
+            <div class="kpi-label">{icon_gold} 6M Low</div>
             <div class="kpi-value">${low_52w:,.0f}</div>
             <div class="kpi-delta up">{((current/low_52w)-1)*100:+.1f}%</div>
         </div>
         <div class="kpi-card" style="--kpi-accent: {bias_kpi_color};">
-            <div class="kpi-label">Session Bias</div>
+            <div class="kpi-label">{icon_bias} Session Bias</div>
             <div class="kpi-value" style="color:{bias_kpi_color};font-size:18px;">{bias_kpi_label}</div>
             <div class="kpi-delta neutral" style="color:{bias_kpi_color};background:rgba(0,0,0,0.2);">{bull_count}B / {bear_count}B drivers</div>
         </div>
@@ -1624,8 +1672,9 @@ def main():
             name, detail, impact, why = d[0], d[1], d[2], d[3]
             tag_class = "tag-bull" if impact == "BULLISH" else "tag-bear" if impact == "BEARISH" else "tag-mixed"
             why_html = f'<br><small style="color:#8892ab;font-style:italic;">{why}</small>' if why else ''
+            icon_html = get_instrument_icon(name)
             st.markdown(f"""<div class="driver-row">
-                <span>{name}<br><small style="color:#6b7a99">{detail}</small>{why_html}</span>
+                <span>{icon_html} {name}<br><small style="color:#6b7a99">{detail}</small>{why_html}</span>
                 <span class="{tag_class}">{impact}</span>
             </div>""", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
@@ -1636,8 +1685,9 @@ def main():
         for name, val in correlations.items():
             color = "#10b981" if val > 0.3 else "#ef4444" if val < -0.3 else "#6b7a99"
             bg = "rgba(16,185,129,0.12)" if val > 0.3 else "rgba(239,68,68,0.12)" if val < -0.3 else "rgba(107,122,153,0.08)"
-            st.markdown(f"""<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;">
-                <span>{name}</span>
+            corr_icon = get_instrument_icon(name)
+            st.markdown(f"""<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;align-items:center;">
+                <span>{corr_icon} {name}</span>
                 <span class="corr-cell" style="background:{bg};color:{color};padding:2px 10px;border-radius:3px;min-width:55px;">{val:+.2f}</span>
             </div>""", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
