@@ -393,26 +393,41 @@ header {visibility: hidden;}
 # ═══════════════════════════════════════════════════════════════
 @st.cache_data(ttl=600)
 def fetch_gold_data(period="6mo", interval="1d"):
-    """Fetch OHLCV data for gold."""
-    ticker = yf.Ticker(GOLD_TICKER)
-    df = ticker.history(period=period, interval=interval)
-    df.index = df.index.tz_localize(None) if df.index.tz else df.index
-    return df
+    """Fetch OHLCV data for gold with retry logic for rate limits."""
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            ticker = yf.Ticker(GOLD_TICKER)
+            df = ticker.history(period=period, interval=interval)
+            df.index = df.index.tz_localize(None) if df.index.tz else df.index
+            return df
+        except Exception as e:
+            err_name = type(e).__name__
+            logger.warning(f"fetch_gold_data attempt {attempt+1}/{max_retries} failed: {err_name}: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)  # 1s, 2s backoff
+            else:
+                logger.error(f"All {max_retries} attempts failed for fetch_gold_data")
+                return pd.DataFrame()
 
 
 @st.cache_data(ttl=600)
 def fetch_correlated_data(period="3mo"):
-    """Fetch data for all correlated instruments."""
+    """Fetch data for all correlated instruments with rate-limit handling."""
     data = {}
-    for name, ticker in CORRELATED.items():
-        try:
-            t = yf.Ticker(ticker)
-            df = t.history(period=period)
-            df.index = df.index.tz_localize(None) if df.index.tz else df.index
-            if len(df) > 0:
-                data[name] = df
-        except Exception as e:
-            logger.warning(f"Failed to fetch {name} ({ticker}): {e}")
+    for name, ticker_sym in CORRELATED.items():
+        for attempt in range(2):
+            try:
+                t = yf.Ticker(ticker_sym)
+                df = t.history(period=period)
+                df.index = df.index.tz_localize(None) if df.index.tz else df.index
+                if len(df) > 0:
+                    data[name] = df
+                break
+            except Exception as e:
+                logger.warning(f"Failed to fetch {name} ({ticker_sym}) attempt {attempt+1}: {e}")
+                if attempt == 0:
+                    time.sleep(1)
     return data
 
 
@@ -1005,12 +1020,25 @@ def main():
 
     # ── Fetch all data ──
     with st.spinner("Fetching market data..."):
-        gold_df = fetch_gold_data(period="6mo", interval="1d")
-        corr_data = fetch_correlated_data(period="3mo")
-        news = fetch_gold_news()
+        try:
+            gold_df = fetch_gold_data(period="6mo", interval="1d")
+        except Exception as e:
+            gold_df = pd.DataFrame()
+            logger.error(f"Unhandled error fetching gold data: {e}")
+        try:
+            corr_data = fetch_correlated_data(period="3mo")
+        except Exception as e:
+            corr_data = {}
+            logger.error(f"Unhandled error fetching correlated data: {e}")
+        try:
+            news = fetch_gold_news()
+        except Exception as e:
+            news = []
+            logger.error(f"Unhandled error fetching news: {e}")
 
     if gold_df.empty:
-        st.error("Failed to fetch gold data. Check your internet connection.")
+        st.error("⚠️ Market data temporarily unavailable — Yahoo Finance rate limit hit. This usually resolves in 1-2 minutes.")
+        st.info("Click the **Rerun** button in the top-right corner or wait for auto-refresh.")
         return
 
     # ── Compute everything ──

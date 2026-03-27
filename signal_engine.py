@@ -8,6 +8,27 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 from datetime import datetime, timedelta
+import time as _time
+import logging
+
+_logger = logging.getLogger("signal_engine")
+
+
+def _fetch_with_retry(symbol, period, interval, max_retries=3):
+    """Fetch yfinance data with retry logic for rate limits."""
+    for attempt in range(max_retries):
+        try:
+            t = yf.Ticker(symbol)
+            df = t.history(period=period, interval=interval)
+            df.index = df.index.tz_localize(None) if df.index.tz else df.index
+            if len(df) > 0:
+                return df
+            return pd.DataFrame()
+        except Exception as e:
+            _logger.warning(f"Fetch {interval} attempt {attempt+1}/{max_retries}: {type(e).__name__}: {e}")
+            if attempt < max_retries - 1:
+                _time.sleep(2 ** attempt)
+    return pd.DataFrame()
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -18,40 +39,25 @@ def fetch_multi_timeframe(symbol="GC=F"):
     data = {}
 
     # Daily — 6 months for trend context
-    try:
-        t = yf.Ticker(symbol)
-        df = t.history(period="6mo", interval="1d")
-        df.index = df.index.tz_localize(None) if df.index.tz else df.index
-        if len(df) > 0:
-            data['daily'] = df
-    except Exception:
-        pass
+    df = _fetch_with_retry(symbol, "6mo", "1d")
+    if not df.empty:
+        data['daily'] = df
 
     # 1H — 60 days (used to build 4H by resampling)
-    try:
-        t = yf.Ticker(symbol)
-        df = t.history(period="60d", interval="1h")
-        df.index = df.index.tz_localize(None) if df.index.tz else df.index
-        if len(df) > 0:
-            data['1h'] = df
-            # Resample to 4H
-            df_4h = df.resample('4h').agg({
-                'Open': 'first', 'High': 'max', 'Low': 'min',
-                'Close': 'last', 'Volume': 'sum'
-            }).dropna()
-            data['4h'] = df_4h
-    except Exception:
-        pass
+    df = _fetch_with_retry(symbol, "60d", "1h")
+    if not df.empty:
+        data['1h'] = df
+        # Resample to 4H
+        df_4h = df.resample('4h').agg({
+            'Open': 'first', 'High': 'max', 'Low': 'min',
+            'Close': 'last', 'Volume': 'sum'
+        }).dropna()
+        data['4h'] = df_4h
 
     # 15m — last 60 days for entry signals
-    try:
-        t = yf.Ticker(symbol)
-        df = t.history(period="60d", interval="15m")
-        df.index = df.index.tz_localize(None) if df.index.tz else df.index
-        if len(df) > 0:
-            data['15m'] = df
-    except Exception:
-        pass
+    df = _fetch_with_retry(symbol, "60d", "15m")
+    if not df.empty:
+        data['15m'] = df
 
     return data
 
