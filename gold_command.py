@@ -839,8 +839,8 @@ def compute_daily_key_levels(df, corr_data, signal_sr_levels=None):
 
 def export_daily_brief_json(key_levels, pivots, ranges, drivers, trade_signals, signal_trend):
     """Export structured JSON for the gold-market-brief skill."""
-    bull_count = sum(1 for _, _, impact in drivers if impact == "BULLISH")
-    bear_count = sum(1 for _, _, impact in drivers if impact == "BEARISH")
+    bull_count = sum(1 for d in drivers if d[2] == "BULLISH")
+    bear_count = sum(1 for d in drivers if d[2] == "BEARISH")
     if bull_count > bear_count + 1:
         session_bias = "BULLISH"
     elif bear_count > bull_count + 1:
@@ -873,7 +873,7 @@ def export_daily_brief_json(key_levels, pivots, ranges, drivers, trade_signals, 
             'signal_engine_sr': key_levels['sr_zones'],
         },
         'macro_snapshot': {'dxy': key_levels['dxy'], 'us_10y': key_levels['tny']},
-        'drivers': [{'name': n, 'detail': d, 'impact': i} for n, d, i in drivers],
+        'drivers': [{'name': d[0], 'detail': d[1], 'impact': d[2], 'why': d[3]} for d in drivers],
         'ranges': {
             'daily': {'range': ranges['today']['range'], 'expected': ranges['today']['expected'], 'utilization_pct': ranges['today']['util']},
             'weekly': {'range': ranges['week']['range'], 'expected': ranges['week']['expected'], 'utilization_pct': ranges['week']['util']},
@@ -893,52 +893,67 @@ def export_daily_brief_json(key_levels, pivots, ranges, drivers, trade_signals, 
 
 
 def assess_macro_drivers(gold_df, corr_data):
-    """Auto-assess macro drivers based on recent data movements."""
+    """Auto-assess macro drivers based on recent data movements.
+    All drivers show: current value + 5D % change for consistency.
+    """
     drivers = []
 
+    def _arrow(chg):
+        return "↑" if chg > 0 else "↓"
+
     # DXY
-    if 'DXY' in corr_data:
+    if 'DXY' in corr_data and len(corr_data['DXY']) >= 5:
         dxy = corr_data['DXY']
-        dxy_chg = ((dxy['Close'].iloc[-1] / dxy['Close'].iloc[-5]) - 1) * 100
+        dxy_val = dxy['Close'].iloc[-1]
+        dxy_chg = ((dxy_val / dxy['Close'].iloc[-5]) - 1) * 100
         impact = "BEARISH" if dxy_chg > 0.3 else "BULLISH" if dxy_chg < -0.3 else "NEUTRAL"
-        drivers.append(("USD (DXY)", f"{'↑' if dxy_chg>0 else '↓'} {abs(dxy_chg):.1f}% 5D", impact))
+        why = "Strong $ = gold headwind" if impact == "BEARISH" else "Weak $ = gold tailwind" if impact == "BULLISH" else ""
+        drivers.append(("USD (DXY)", f"{dxy_val:.1f} ({_arrow(dxy_chg)} {abs(dxy_chg):.1f}% 5D)", impact, why))
 
     # US 10Y
-    if 'US 10Y' in corr_data:
+    if 'US 10Y' in corr_data and len(corr_data['US 10Y']) >= 5:
         tny = corr_data['US 10Y']
-        tny_chg = tny['Close'].iloc[-1] - tny['Close'].iloc[-5]
-        impact = "BEARISH" if tny_chg > 0.05 else "BULLISH" if tny_chg < -0.05 else "NEUTRAL"
-        drivers.append(("US 10Y Yield", f"{'↑' if tny_chg>0 else '↓'} {abs(tny_chg):.2f} 5D", impact))
+        tny_val = tny['Close'].iloc[-1]
+        tny_chg_pct = ((tny_val / tny['Close'].iloc[-5]) - 1) * 100
+        impact = "BEARISH" if tny_chg_pct > 1 else "BULLISH" if tny_chg_pct < -1 else "NEUTRAL"
+        why = "Rising yields = opportunity cost" if impact == "BEARISH" else "Falling yields = gold supportive" if impact == "BULLISH" else ""
+        drivers.append(("US 10Y Yield", f"{tny_val:.2f}% ({_arrow(tny_chg_pct)} {abs(tny_chg_pct):.1f}% 5D)", impact, why))
 
     # VIX
-    if 'VIX' in corr_data:
+    if 'VIX' in corr_data and len(corr_data['VIX']) >= 5:
         vix = corr_data['VIX']
         vix_val = vix['Close'].iloc[-1]
-        vix_chg = ((vix['Close'].iloc[-1] / vix['Close'].iloc[-5]) - 1) * 100
+        vix_chg = ((vix_val / vix['Close'].iloc[-5]) - 1) * 100
         impact = "BULLISH" if vix_val > 20 else "NEUTRAL"
-        drivers.append(("VIX (Fear Index)", f"{vix_val:.1f} ({'↑' if vix_chg>0 else '↓'} {abs(vix_chg):.1f}%)", impact))
+        why = "High fear = safe haven demand" if impact == "BULLISH" else ""
+        drivers.append(("VIX (Fear Index)", f"{vix_val:.1f} ({_arrow(vix_chg)} {abs(vix_chg):.1f}% 5D)", impact, why))
 
     # Oil
-    if 'Crude Oil' in corr_data:
+    if 'Crude Oil' in corr_data and len(corr_data['Crude Oil']) >= 5:
         oil = corr_data['Crude Oil']
-        oil_chg = ((oil['Close'].iloc[-1] / oil['Close'].iloc[-5]) - 1) * 100
+        oil_val = oil['Close'].iloc[-1]
+        oil_chg = ((oil_val / oil['Close'].iloc[-5]) - 1) * 100
         impact = "BULLISH" if oil_chg > 2 else "BEARISH" if oil_chg < -2 else "NEUTRAL"
-        drivers.append(("Crude Oil", f"{'↑' if oil_chg>0 else '↓'} {abs(oil_chg):.1f}% 5D", impact))
+        why = "Oil up = inflation fear = gold bid" if impact == "BULLISH" else "Oil down = deflation risk" if impact == "BEARISH" else ""
+        drivers.append(("Crude Oil", f"${oil_val:.2f} ({_arrow(oil_chg)} {abs(oil_chg):.1f}% 5D)", impact, why))
 
     # S&P 500
-    if 'S&P 500' in corr_data:
+    if 'S&P 500' in corr_data and len(corr_data['S&P 500']) >= 5:
         spx = corr_data['S&P 500']
-        spx_chg = ((spx['Close'].iloc[-1] / spx['Close'].iloc[-5]) - 1) * 100
-        # Gold often benefits from equity weakness (risk-off)
+        spx_val = spx['Close'].iloc[-1]
+        spx_chg = ((spx_val / spx['Close'].iloc[-5]) - 1) * 100
         impact = "BULLISH" if spx_chg < -1 else "BEARISH" if spx_chg > 1 else "NEUTRAL"
-        drivers.append(("S&P 500 (Risk Sentiment)", f"{'↑' if spx_chg>0 else '↓'} {abs(spx_chg):.1f}% 5D", impact))
+        why = "Equities falling = risk-off gold bid" if impact == "BULLISH" else "Risk-on = less gold demand" if impact == "BEARISH" else ""
+        drivers.append(("S&P 500", f"{spx_val:,.0f} ({_arrow(spx_chg)} {abs(spx_chg):.1f}% 5D)", impact, why))
 
     # Gold trend
     gold_sma20 = gold_df['SMA_20'].iloc[-1]
     gold_sma50 = gold_df['SMA_50'].iloc[-1] if not pd.isna(gold_df['SMA_50'].iloc[-1]) else gold_sma20
     current = gold_df['Close'].iloc[-1]
+    pos = "above" if current > gold_sma20 else "below"
     trend = "BEARISH" if current < gold_sma20 and current < gold_sma50 else "BULLISH" if current > gold_sma20 else "NEUTRAL"
-    drivers.append(("Gold Trend (SMA 20/50)", f"Price {'below' if current < gold_sma20 else 'above'} 20-SMA", trend))
+    why = f"Price {pos} key moving averages"
+    drivers.append(("Gold Trend (SMA 20/50)", f"Price {pos} 20-SMA (${gold_sma20:,.0f})", trend, why))
 
     return drivers
 
@@ -959,8 +974,8 @@ def generate_three_tier_analysis(df, spikes_correlated, drivers):
     macd_sig = df['MACD_signal'].iloc[-1]
 
     # Count bullish/bearish drivers
-    bull_count = sum(1 for _, _, impact in drivers if impact == "BULLISH")
-    bear_count = sum(1 for _, _, impact in drivers if impact == "BEARISH")
+    bull_count = sum(1 for d in drivers if d[2] == "BULLISH")
+    bear_count = sum(1 for d in drivers if d[2] == "BEARISH")
 
     direction = "up" if daily_chg >= 0 else "down"
     trend_word = "rising" if current > sma20 else "falling"
@@ -1011,7 +1026,7 @@ def generate_three_tier_analysis(df, spikes_correlated, drivers):
 
 <p><b>Momentum:</b> RSI {rsi:.1f} | MACD histogram {'expanding' if abs(df['MACD_hist'].iloc[-1]) > abs(df['MACD_hist'].iloc[-2]) else 'contracting'} ({df['MACD_hist'].iloc[-1]:+.2f}) | Price {'compressed within' if (bb_upper - bb_lower) / current < 0.04 else 'wide'} BB ({((bb_upper-bb_lower)/current)*100:.1f}% width)</p>
 
-<p><b>Cross-asset snapshot:</b> {'Negative DXY correlation in play — ' if any(n == 'DXY' and i == 'BEARISH' for n, _, i in drivers) else ''}{'Yields rising = headwind — ' if any('10Y' in n and i == 'BEARISH' for n, _, i in drivers) else ''}{'VIX elevated = risk-off bid — ' if any('VIX' in n and i == 'BULLISH' for n, _, i in drivers) else ''}{'Equities weak = safe haven flow' if any('S&P' in n and i == 'BULLISH' for n, _, i in drivers) else ''}</p>
+<p><b>Cross-asset snapshot:</b> {'Negative DXY correlation in play — ' if any(d[0] == 'USD (DXY)' and d[2] == 'BEARISH' for d in drivers) else ''}{'Yields rising = headwind — ' if any('10Y' in d[0] and d[2] == 'BEARISH' for d in drivers) else ''}{'VIX elevated = risk-off bid — ' if any('VIX' in d[0] and d[2] == 'BULLISH' for d in drivers) else ''}{'Equities weak = safe haven flow' if any('S&P' in d[0] and d[2] == 'BULLISH' for d in drivers) else ''}</p>
 
 <p><b>Volume profile:</b> Last session {df['Vol_ratio'].iloc[-1]:.1f}x avg. {len([s for s in spikes_correlated if s['vol_ratio'] > 2]) if spikes_correlated else 0} sessions with &gt;2x volume in past month.</p>
 
@@ -1029,8 +1044,8 @@ def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, 
     dir_class = "highlight-up" if daily_chg >= 0 else "highlight-down"
 
     # Session bias from drivers
-    bull_count = sum(1 for _, _, impact in drivers if impact == "BULLISH")
-    bear_count = sum(1 for _, _, impact in drivers if impact == "BEARISH")
+    bull_count = sum(1 for d in drivers if d[2] == "BULLISH")
+    bear_count = sum(1 for d in drivers if d[2] == "BEARISH")
     if bull_count > bear_count + 1:
         bias = "BULLISH"
         bias_color = "#10b981"
@@ -1049,7 +1064,8 @@ def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, 
 
     # Key driver (most impactful)
     key_drivers_text = []
-    for name, detail, impact in drivers:
+    for d in drivers:
+        name, detail, impact = d[0], d[1], d[2]
         if impact != "NEUTRAL":
             key_drivers_text.append(f"{name} ({detail})")
     top_drivers = ", ".join(key_drivers_text[:3]) if key_drivers_text else "no strong macro catalysts"
@@ -1087,17 +1103,15 @@ def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, 
                   f'resistance at <span class="highlight-down">${nearest_resistance:,.0f}</span> (Fibonacci pivots).')
 
     # Compose the brief
-    brief_html = f"""
-    <p>Gold is trading at <b>${current:,.2f}</b>, <span class="{dir_class}">{direction} ${abs(daily_chg):,.2f} ({daily_pct:+.2f}%)</span> on the session.
-    The daily trend is <b>{signal_trend.replace('_', ' ').lower()}</b> and macro conditions are <b>{bias_word}</b> —
-    driven by {top_drivers}.</p>
-
-    <p>{rsi_text}. {range_text}</p>
-
-    <p>{sig_text}</p>
-
-    <p>{levels_text}</p>
-    """
+    brief_html = (
+        f'<p>Gold is trading at <b>${current:,.2f}</b>, '
+        f'<span class="{dir_class}">{direction} ${abs(daily_chg):,.2f} ({daily_pct:+.2f}%)</span> on the session. '
+        f'The daily trend is <b>{signal_trend.replace("_", " ").lower()}</b> and macro conditions are <b>{bias_word}</b> — '
+        f'driven by {top_drivers}.</p>'
+        f'<p>{rsi_text}. {range_text}</p>'
+        f'<p>{sig_text}</p>'
+        f'<p>{levels_text}</p>'
+    )
 
     return brief_html, bias, bias_color, bias_bg
 
@@ -1233,24 +1247,22 @@ def main():
         signal_trend, ranges, pivots, key_levels
     )
 
-    st.markdown(f"""
-    <div class="daily-brief">
-        <div class="daily-brief-header">
-            <div class="daily-brief-title">
-                <span style="font-size:16px;">&#9889;</span> Daily Brief
-                <span style="font-size:9px;color:#6b7a99;font-weight:400;letter-spacing:0.5px;">
-                    {datetime.utcnow().strftime('%B %d, %Y')} &middot; Auto-generated from live data
-                </span>
-            </div>
-            <span class="brief-bias-badge" style="background:{brief_bias_bg};color:{brief_bias_color};border:1px solid {brief_bias_color}33;">
-                {brief_bias}
-            </span>
-        </div>
-        <div class="daily-brief-body">
-            {brief_text}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    brief_date = datetime.utcnow().strftime('%B %d, %Y')
+    brief_card_html = (
+        f'<div class="daily-brief">'
+        f'<div class="daily-brief-header">'
+        f'<div class="daily-brief-title">'
+        f'<span style="font-size:16px;">&#9889;</span> Daily Brief '
+        f'<span style="font-size:9px;color:#6b7a99;font-weight:400;letter-spacing:0.5px;">'
+        f'{brief_date} &middot; Auto-generated from live data</span>'
+        f'</div>'
+        f'<span class="brief-bias-badge" style="background:{brief_bias_bg};color:{brief_bias_color};border:1px solid {brief_bias_color}33;">'
+        f'{brief_bias}</span>'
+        f'</div>'
+        f'<div class="daily-brief-body">{brief_text}</div>'
+        f'</div>'
+    )
+    st.markdown(brief_card_html, unsafe_allow_html=True)
 
     # ══════════════════════════════════════════════════
     # TOP KPI ROW — Custom HTML Cards
@@ -1264,8 +1276,8 @@ def main():
     chg_arrow = "&#9650;" if daily_chg >= 0 else "&#9660;"
 
     # Session bias for KPI card (replaces volume card)
-    bull_count = sum(1 for _, _, impact in drivers if impact == "BULLISH")
-    bear_count = sum(1 for _, _, impact in drivers if impact == "BEARISH")
+    bull_count = sum(1 for d in drivers if d[2] == "BULLISH")
+    bear_count = sum(1 for d in drivers if d[2] == "BEARISH")
     bias_kpi_label = brief_bias
     bias_kpi_color = brief_bias_color
     bias_kpi_bg = brief_bias_bg
@@ -1342,8 +1354,8 @@ def main():
     # ══════════════════════════════════════════════════
     # DAILY KEY LEVELS — The Game Plan
     # ══════════════════════════════════════════════════
-    bull_d = sum(1 for _, _, impact in drivers if impact == "BULLISH")
-    bear_d = sum(1 for _, _, impact in drivers if impact == "BEARISH")
+    bull_d = sum(1 for d in drivers if d[2] == "BULLISH")
+    bear_d = sum(1 for d in drivers if d[2] == "BEARISH")
     if bull_d > bear_d + 1:
         bias_label, bias_color, bias_bg = "BULLISH", "#10b981", "rgba(16,185,129,0.12)"
     elif bear_d > bull_d + 1:
@@ -1608,10 +1620,12 @@ def main():
         # ── MACRO DRIVERS ──
         st.markdown("""<div class="intel-card"><h3 style="margin-bottom:14px;">Macro Drivers
             <span class="pill pill-data">AUTO-COMPUTED</span></h3>""", unsafe_allow_html=True)
-        for name, detail, impact in drivers:
+        for d in drivers:
+            name, detail, impact, why = d[0], d[1], d[2], d[3]
             tag_class = "tag-bull" if impact == "BULLISH" else "tag-bear" if impact == "BEARISH" else "tag-mixed"
+            why_html = f'<br><small style="color:#8892ab;font-style:italic;">{why}</small>' if why else ''
             st.markdown(f"""<div class="driver-row">
-                <span>{name}<br><small style="color:#6b7a99">{detail}</small></span>
+                <span>{name}<br><small style="color:#6b7a99">{detail}</small>{why_html}</span>
                 <span class="{tag_class}">{impact}</span>
             </div>""", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
