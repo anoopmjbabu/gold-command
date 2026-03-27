@@ -397,6 +397,46 @@ header {visibility: hidden;}
 /* ═══ Global padding adjustment ═══ */
 .block-container { padding-top: 1.5rem !important; padding-bottom: 1rem !important; }
 
+/* ═══ Daily Brief Card ═══ */
+.daily-brief {
+    background: linear-gradient(135deg, #0d1326 0%, #131b38 50%, #0f1730 100%);
+    border: 1px solid rgba(240,185,11,0.2);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+    position: relative;
+    overflow: hidden;
+}
+.daily-brief::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(240,185,11,0.4), rgba(16,185,129,0.3), transparent);
+}
+.daily-brief-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 12px;
+}
+.daily-brief-title {
+    font-size: 10px; font-weight: 800; color: #f0b90b;
+    text-transform: uppercase; letter-spacing: 1.5px;
+    display: flex; align-items: center; gap: 8px;
+}
+.daily-brief-body {
+    font-size: 13px; line-height: 1.8; color: #c8d0e4;
+}
+.daily-brief-body b { color: #f0b90b !important; }
+.daily-brief-body .highlight-up { color: #10b981; font-weight: 600; }
+.daily-brief-body .highlight-down { color: #ef4444; font-weight: 600; }
+.daily-brief-body .highlight-neutral { color: #f59e0b; font-weight: 600; }
+.brief-bias-badge {
+    font-size: 10px; font-weight: 800; padding: 4px 14px; border-radius: 20px;
+    letter-spacing: 0.8px; text-transform: uppercase;
+}
+@media (max-width: 768px) {
+    .daily-brief { padding: 14px 16px; }
+    .daily-brief-body { font-size: 12px; line-height: 1.7; }
+}
+
 /* ═══ Divider ═══ */
 .section-divider {
     height: 1px; margin: 24px 0;
@@ -982,6 +1022,86 @@ def generate_three_tier_analysis(df, spikes_correlated, drivers):
     return beginner, intermediate, pro
 
 
+def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, trade_signals, signal_trend, ranges, pivots, key_levels):
+    """Generate a plain-English daily brief summary for the top of the dashboard."""
+    # Direction
+    direction = "up" if daily_chg >= 0 else "down"
+    dir_class = "highlight-up" if daily_chg >= 0 else "highlight-down"
+
+    # Session bias from drivers
+    bull_count = sum(1 for _, _, impact in drivers if impact == "BULLISH")
+    bear_count = sum(1 for _, _, impact in drivers if impact == "BEARISH")
+    if bull_count > bear_count + 1:
+        bias = "BULLISH"
+        bias_color = "#10b981"
+        bias_bg = "rgba(16,185,129,0.12)"
+        bias_word = "bullish"
+    elif bear_count > bull_count + 1:
+        bias = "BEARISH"
+        bias_color = "#ef4444"
+        bias_bg = "rgba(239,68,68,0.12)"
+        bias_word = "bearish"
+    else:
+        bias = "NEUTRAL"
+        bias_color = "#f59e0b"
+        bias_bg = "rgba(245,158,11,0.12)"
+        bias_word = "mixed"
+
+    # Key driver (most impactful)
+    key_drivers_text = []
+    for name, detail, impact in drivers:
+        if impact != "NEUTRAL":
+            key_drivers_text.append(f"{name} ({detail})")
+    top_drivers = ", ".join(key_drivers_text[:3]) if key_drivers_text else "no strong macro catalysts"
+
+    # RSI context
+    if rsi < 30:
+        rsi_text = f'RSI at <span class="highlight-down">{rsi:.0f} (oversold)</span> — bounce potential'
+    elif rsi > 70:
+        rsi_text = f'RSI at <span class="highlight-up">{rsi:.0f} (overbought)</span> — pullback risk'
+    else:
+        rsi_text = f"RSI at {rsi:.0f} (neutral zone)"
+
+    # Range context
+    daily_util = ranges['today']['util']
+    if daily_util > 100:
+        range_text = f"Today's range has <b>exceeded</b> the ATR-expected move ({daily_util:.0f}% utilized) — extended conditions."
+    elif daily_util > 70:
+        range_text = f"Today's range is nearing the expected daily move ({daily_util:.0f}% of ATR used)."
+    else:
+        range_text = f"Today's range has room to expand ({daily_util:.0f}% of expected ATR used)."
+
+    # Signal summary
+    if trade_signals:
+        top_sig = trade_signals[0]
+        sig_text = (f'The signal engine has detected a <b>{top_sig["direction"]}</b> setup '
+                   f'({top_sig["confidence"]} confidence, score {top_sig["score"]}) '
+                   f'based on a {top_sig["pattern_name"]} at ${top_sig["level_price"]:,.2f}.')
+    else:
+        sig_text = "No active trade signals right now — the engine is scanning for setups at key levels."
+
+    # Key levels to watch
+    nearest_support = pivots['S1']
+    nearest_resistance = pivots['R1']
+    levels_text = (f'Key levels: support at <span class="highlight-up">${nearest_support:,.0f}</span>, '
+                  f'resistance at <span class="highlight-down">${nearest_resistance:,.0f}</span> (Fibonacci pivots).')
+
+    # Compose the brief
+    brief_html = f"""
+    <p>Gold is trading at <b>${current:,.2f}</b>, <span class="{dir_class}">{direction} ${abs(daily_chg):,.2f} ({daily_pct:+.2f}%)</span> on the session.
+    The daily trend is <b>{signal_trend.replace('_', ' ').lower()}</b> and macro conditions are <b>{bias_word}</b> —
+    driven by {top_drivers}.</p>
+
+    <p>{rsi_text}. {range_text}</p>
+
+    <p>{sig_text}</p>
+
+    <p>{levels_text}</p>
+    """
+
+    return brief_html, bias, bias_color, bias_bg
+
+
 # ═══════════════════════════════════════════════════════════════
 # MAIN APP
 # ═══════════════════════════════════════════════════════════════
@@ -1104,10 +1224,37 @@ def main():
     brief_data = export_daily_brief_json(key_levels, pivots, ranges, drivers, trade_signals, signal_trend)
 
     # ══════════════════════════════════════════════════
+    # DAILY BRIEF — Quick Summary Card
+    # ══════════════════════════════════════════════════
+    rsi_val = gold_df['RSI'].iloc[-1]
+    brief_text, brief_bias, brief_bias_color, brief_bias_bg = generate_daily_brief_text(
+        current, daily_chg, daily_pct, rsi_val,
+        gold_df['ATR_14'].iloc[-1], drivers, trade_signals,
+        signal_trend, ranges, pivots, key_levels
+    )
+
+    st.markdown(f"""
+    <div class="daily-brief">
+        <div class="daily-brief-header">
+            <div class="daily-brief-title">
+                <span style="font-size:16px;">&#9889;</span> Daily Brief
+                <span style="font-size:9px;color:#6b7a99;font-weight:400;letter-spacing:0.5px;">
+                    {datetime.utcnow().strftime('%B %d, %Y')} &middot; Auto-generated from live data
+                </span>
+            </div>
+            <span class="brief-bias-badge" style="background:{brief_bias_bg};color:{brief_bias_color};border:1px solid {brief_bias_color}33;">
+                {brief_bias}
+            </span>
+        </div>
+        <div class="daily-brief-body">
+            {brief_text}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
     # ══════════════════════════════════════════════════
     # TOP KPI ROW — Custom HTML Cards
     # ══════════════════════════════════════════════════
-    rsi_val = gold_df['RSI'].iloc[-1]
     rsi_status = "OVERSOLD" if rsi_val < 30 else "OVERBOUGHT" if rsi_val > 70 else "NEUTRAL"
     rsi_color = "#ef4444" if rsi_val < 30 else "#f59e0b" if rsi_val > 70 else "#10b981"
     vol_r = gold_df['Vol_ratio'].iloc[-1]
@@ -1115,6 +1262,13 @@ def main():
     vol_color = "#f59e0b" if vol_r > 1.5 else "#5a6a8a" if vol_r < 0.7 else "#10b981"
     chg_color = "#10b981" if daily_chg >= 0 else "#ef4444"
     chg_arrow = "&#9650;" if daily_chg >= 0 else "&#9660;"
+
+    # Session bias for KPI card (replaces volume card)
+    bull_count = sum(1 for _, _, impact in drivers if impact == "BULLISH")
+    bear_count = sum(1 for _, _, impact in drivers if impact == "BEARISH")
+    bias_kpi_label = brief_bias
+    bias_kpi_color = brief_bias_color
+    bias_kpi_bg = brief_bias_bg
 
     st.markdown(f"""
     <div class="kpi-grid">
@@ -1130,23 +1284,23 @@ def main():
         </div>
         <div class="kpi-card" style="--kpi-accent: #3b82f6;">
             <div class="kpi-label">ATR (14)</div>
-            <div class="kpi-value">${gold_df['ATR_14'].iloc[-1]:,.2f}</div>
+            <div class="kpi-value">${gold_df['ATR_14'].iloc[-1]:,.0f}</div>
             <div class="kpi-delta neutral">Daily Range</div>
         </div>
         <div class="kpi-card" style="--kpi-accent: #ef4444;">
             <div class="kpi-label">6M High</div>
-            <div class="kpi-value">${high_52w:,.2f}</div>
+            <div class="kpi-value">${high_52w:,.0f}</div>
             <div class="kpi-delta {'down' if current < high_52w else 'up'}">{((current/high_52w)-1)*100:+.1f}%</div>
         </div>
         <div class="kpi-card" style="--kpi-accent: #10b981;">
             <div class="kpi-label">6M Low</div>
-            <div class="kpi-value">${low_52w:,.2f}</div>
+            <div class="kpi-value">${low_52w:,.0f}</div>
             <div class="kpi-delta up">{((current/low_52w)-1)*100:+.1f}%</div>
         </div>
-        <div class="kpi-card" style="--kpi-accent: {vol_color};">
-            <div class="kpi-label">Volume</div>
-            <div class="kpi-value">{vol_r:.1f}x</div>
-            <div class="kpi-delta neutral" style="color:{vol_color};background:rgba(0,0,0,0.2);">{vol_status}</div>
+        <div class="kpi-card" style="--kpi-accent: {bias_kpi_color};">
+            <div class="kpi-label">Session Bias</div>
+            <div class="kpi-value" style="color:{bias_kpi_color};font-size:18px;">{bias_kpi_label}</div>
+            <div class="kpi-delta neutral" style="color:{bias_kpi_color};background:rgba(0,0,0,0.2);">{bull_count}B / {bear_count}B drivers</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
