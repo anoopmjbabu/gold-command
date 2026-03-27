@@ -32,7 +32,7 @@ logger = logging.getLogger("gold_command")
 # CONFIG
 # ═══════════════════════════════════════════════════════════════
 st.set_page_config(
-    page_title="GOLD COMMAND — XAU/USD Intelligence",
+    page_title="GOLD COMMAND — XAU/USD Intelligence | by Anoop B.",
     page_icon="🥇",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -118,6 +118,20 @@ code, .stMetricValue { font-family: 'JetBrains Mono', monospace !important; }
     gap: 12px;
     margin-bottom: 20px;
 }
+@media (max-width: 768px) {
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .kpi-value { font-size: 16px !important; word-break: keep-all; white-space: nowrap; }
+    .kpi-label { font-size: 8px; }
+    .kpi-card { padding: 10px 12px; }
+    .gold-header h1 { font-size: 20px !important; }
+    .gold-header .sub { font-size: 9px; }
+    .section-header h2 { font-size: 14px !important; }
+}
+@media (max-width: 480px) {
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; }
+    .kpi-value { font-size: 14px !important; }
+    .kpi-card { padding: 8px 10px; }
+}
 .kpi-card {
     background: linear-gradient(145deg, #0b1022, #0f1528);
     border: 1px solid #1a2240;
@@ -126,6 +140,7 @@ code, .stMetricValue { font-family: 'JetBrains Mono', monospace !important; }
     position: relative;
     overflow: hidden;
     transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    min-width: 0;
 }
 .kpi-card:hover {
     border-color: rgba(240,185,11,0.2);
@@ -145,6 +160,9 @@ code, .stMetricValue { font-family: 'JetBrains Mono', monospace !important; }
     font-family: 'JetBrains Mono', monospace;
     font-size: 20px; font-weight: 700; color: #e8ecf4;
     line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .kpi-delta {
     font-family: 'JetBrains Mono', monospace;
@@ -974,6 +992,7 @@ def main():
         <div>
             <h1 style="margin:0;">GOLD COMMAND</h1>
             <span class="sub">XAU/USD Market Intelligence Terminal</span>
+            <div style="font-size:9px;color:#5a6a8a;margin-top:3px;letter-spacing:0.5px;">Developed by <span style="color:#f0b90b;">Anoop B.</span></div>
         </div>
         <div style="display:flex; align-items:center; gap:16px;">
             <span class="live-badge"><span class="live-dot"></span>LIVE DATA</span>
@@ -1594,6 +1613,7 @@ def main():
     st.markdown(f"""<div class="section-divider"></div>
     <div style="text-align:center;padding:16px 0;">
         <div style="font-size:10px;font-weight:700;color:#f0b90b;letter-spacing:2px;margin-bottom:4px;">GOLD COMMAND</div>
+        <div style="font-size:9px;color:#8a94a8;margin-bottom:4px;">Developed by <span style="color:#f0b90b;font-weight:600;">Anoop B.</span></div>
         <div style="font-size:8px;color:#3d4b6b;letter-spacing:0.5px;">
             Market Intelligence Terminal&nbsp;&nbsp;|&nbsp;&nbsp;Data: Yahoo Finance, Google News RSS&nbsp;&nbsp;|&nbsp;&nbsp;Charts: TradingView<br>
             This is not financial advice. All data is delayed and for informational purposes only.
