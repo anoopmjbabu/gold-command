@@ -620,6 +620,88 @@ def fetch_correlated_data(period="3mo"):
     return data
 
 
+@st.cache_data(ttl=1800)
+def fetch_economic_calendar():
+    """Fetch upcoming and recent economic events that impact gold from Google News RSS.
+    Returns list of dicts: [{date, title, impact, instruments}]"""
+    # Key economic terms that move gold
+    cal_feeds = [
+        "https://news.google.com/rss/search?q=NFP+jobs+report+OR+non+farm+payrolls&hl=en-US&gl=US&ceid=US:en&when=7d",
+        "https://news.google.com/rss/search?q=CPI+inflation+data+OR+consumer+price+index&hl=en-US&gl=US&ceid=US:en&when=7d",
+        "https://news.google.com/rss/search?q=FOMC+decision+OR+Fed+rate+decision+OR+Fed+minutes&hl=en-US&gl=US&ceid=US:en&when=7d",
+        "https://news.google.com/rss/search?q=PMI+manufacturing+OR+ISM+services&hl=en-US&gl=US&ceid=US:en&when=7d",
+        "https://news.google.com/rss/search?q=jobless+claims+OR+unemployment+rate&hl=en-US&gl=US&ceid=US:en&when=7d",
+        "https://news.google.com/rss/search?q=GDP+data+OR+retail+sales+data&hl=en-US&gl=US&ceid=US:en&when=7d",
+        "https://news.google.com/rss/search?q=PCE+inflation+OR+core+PCE&hl=en-US&gl=US&ceid=US:en&when=7d",
+    ]
+
+    # Impact classification rules
+    _high_impact = ['nfp', 'non-farm', 'non farm', 'fomc', 'rate decision', 'cpi', 'inflation data',
+                    'pce', 'core pce', 'gdp', 'powell', 'fed chair']
+    _med_impact = ['pmi', 'ism', 'jobless claims', 'unemployment', 'retail sales', 'fed minutes',
+                   'consumer confidence', 'housing', 'durable goods']
+    _instrument_map = {
+        'XAU': ['gold', 'safe haven', 'bullion'],
+        'USD': ['dollar', 'dxy', 'fed', 'fomc', 'rate', 'inflation', 'cpi', 'pce', 'nfp', 'jobs',
+                'gdp', 'retail', 'claims', 'payroll', 'employment', 'unemployment', 'powell'],
+        'BOND': ['yield', 'treasury', 'bond', '10-year', '10y'],
+        'SPX': ['stocks', 'equity', 's&p', 'nasdaq', 'wall street'],
+    }
+
+    events = []
+    seen_titles = set()
+    for feed_url in cal_feeds:
+        try:
+            feed = feedparser.parse(feed_url)
+            for entry in feed.entries[:10]:
+                title = entry.get('title', '')
+                if not title or title in seen_titles:
+                    continue
+                seen_titles.add(title)
+                title_lower = title.lower()
+
+                # Parse date
+                pub_date = None
+                for date_field in ['published_parsed', 'updated_parsed']:
+                    parsed = entry.get(date_field)
+                    if parsed:
+                        try:
+                            pub_date = datetime(*parsed[:6]).date()
+                        except Exception:
+                            pass
+                        break
+                if not pub_date:
+                    continue
+
+                # Classify impact
+                impact = "LOW"
+                if any(kw in title_lower for kw in _high_impact):
+                    impact = "HIGH"
+                elif any(kw in title_lower for kw in _med_impact):
+                    impact = "MEDIUM"
+
+                # Detect affected instruments
+                instruments = []
+                for instr, keywords in _instrument_map.items():
+                    if any(kw in title_lower for kw in keywords):
+                        instruments.append(instr)
+                if not instruments:
+                    instruments = ['USD']  # Default for econ data
+
+                events.append({
+                    'date': pub_date,
+                    'title': title,
+                    'impact': impact,
+                    'instruments': instruments,
+                })
+        except Exception as e:
+            logger.warning(f"Economic calendar fetch failed: {e}")
+
+    # Deduplicate by date + similar title
+    events.sort(key=lambda x: (x['date'], x['impact'] != 'HIGH'), reverse=False)
+    return events
+
+
 @st.cache_data(ttl=600)
 def fetch_gold_news():
     """Fetch breaking news that drives gold: geopolitics, Fed, wars, macro events."""
@@ -744,8 +826,8 @@ def detect_volume_spikes(df, threshold=1.5):
     return spikes.sort_index(ascending=False)
 
 
-def correlate_news_to_spikes(spikes, news):
-    """Match news articles to volume spike dates."""
+def correlate_news_to_spikes(spikes, news, corr_data=None, econ_events=None):
+    """Match news, correlated asset moves, and economic events to volume spike dates."""
     correlated = []
     for idx, spike in spikes.iterrows():
         spike_date = idx.date() if hasattr(idx, 'date') else idx
@@ -753,10 +835,35 @@ def correlate_news_to_spikes(spikes, news):
         for article in news:
             if article['published']:
                 news_date = article['published'].date()
-                # Match if news is same day or day before
                 diff = (spike_date - news_date).days
                 if 0 <= diff <= 1:
                     matched_news.append(article)
+
+        # ── Correlated asset snapshot for this spike date ──
+        asset_moves = {}
+        if corr_data:
+            for name, df in corr_data.items():
+                try:
+                    # Find closest date match
+                    date_matches = [d for d in df.index if d.date() == spike_date]
+                    if date_matches:
+                        row_idx = df.index.get_loc(date_matches[0])
+                        if row_idx >= 1:
+                            cur = df['Close'].iloc[row_idx]
+                            prv = df['Close'].iloc[row_idx - 1]
+                            chg_pct = ((cur / prv) - 1) * 100
+                            asset_moves[name] = {'price': cur, 'change_pct': round(chg_pct, 2)}
+                except Exception:
+                    pass
+
+        # ── Economic calendar event match ──
+        matched_events = []
+        if econ_events:
+            for event in econ_events:
+                ev_date = event.get('date')
+                if ev_date and ev_date == spike_date:
+                    matched_events.append(event)
+
         correlated.append({
             'date': spike_date,
             'open': spike['Open'],
@@ -769,6 +876,8 @@ def correlate_news_to_spikes(spikes, news):
             'change_pct': spike['change_pct'],
             'direction': spike['direction'],
             'news': matched_news[:3],
+            'asset_moves': asset_moves,
+            'econ_events': matched_events[:3],
         })
     return correlated
 
@@ -1465,7 +1574,8 @@ def main():
     # ── Compute everything ──
     gold_df = compute_indicators(gold_df)
     spikes = detect_volume_spikes(gold_df, threshold=1.5)
-    spikes_correlated = correlate_news_to_spikes(spikes, news)
+    econ_events = fetch_economic_calendar()
+    spikes_correlated = correlate_news_to_spikes(spikes, news, corr_data=corr_data, econ_events=econ_events)
     correlations = compute_correlations(gold_df, corr_data)
     up_probs, down_probs = compute_probability_targets(gold_df)
     mtf_probs = compute_multi_tf_probability(gold_df)
@@ -2017,9 +2127,9 @@ def main():
     st.markdown("""<div class="section-header" style="--section-accent: #a855f7;">
         <div>
             <span class="section-title">Volume Spike Detector</span>
-            <div style="font-size:9px;color:#5a6a8a;margin-top:4px;">Candles with 1.5x+ average volume, matched to gold-related news within 1 day</div>
+            <div style="font-size:9px;color:#5a6a8a;margin-top:4px;">High-volume candles matched to news, economic events &amp; correlated asset moves</div>
         </div>
-        <span class="pill pill-model">NEWS MATCHED</span>
+        <span class="pill pill-model">MULTI-SOURCE</span>
     </div>""", unsafe_allow_html=True)
 
     if spikes_correlated:
@@ -2041,8 +2151,42 @@ def main():
                 </div>
             """, unsafe_allow_html=True)
 
+            # ── Correlated Asset Moves (same-day context) ──
+            asset_moves = spike.get('asset_moves', {})
+            if asset_moves:
+                moves_html = '<div style="margin-top:8px;padding-top:6px;border-top:1px solid #263054;">'
+                moves_html += '<div style="font-size:9px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Same-Day Moves</div>'
+                moves_html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">'
+                for asset_name, mv in asset_moves.items():
+                    mv_color = "#10b981" if mv['change_pct'] >= 0 else "#ef4444"
+                    mv_arrow = "▲" if mv['change_pct'] >= 0 else "▼"
+                    asset_icon = get_instrument_icon(asset_name)
+                    moves_html += f'<span style="font-size:10px;padding:3px 8px;background:rgba(26,34,64,0.5);border-radius:4px;display:inline-flex;align-items:center;gap:4px;">'
+                    moves_html += f'{asset_icon}<span style="color:#a8b2c8;">{asset_name}</span> '
+                    moves_html += f'<span style="color:{mv_color};font-family:JetBrains Mono;font-weight:600;">{mv_arrow}{mv["change_pct"]:+.2f}%</span></span>'
+                moves_html += '</div></div>'
+                st.markdown(moves_html, unsafe_allow_html=True)
+
+            # ── Economic Calendar Events ──
+            econ_evts = spike.get('econ_events', [])
+            if econ_evts:
+                st.markdown('<div style="margin-top:6px;padding-top:6px;border-top:1px solid #263054;">', unsafe_allow_html=True)
+                st.markdown('<div style="font-size:9px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Economic Events</div>', unsafe_allow_html=True)
+                for evt in econ_evts[:2]:
+                    impact_color = "#ef4444" if evt['impact'] == 'HIGH' else "#f59e0b" if evt['impact'] == 'MEDIUM' else "#6b7a99"
+                    impact_bg = f"rgba({239 if evt['impact']=='HIGH' else 245 if evt['impact']=='MEDIUM' else 107},{68 if evt['impact']=='HIGH' else 158 if evt['impact']=='MEDIUM' else 122},{68 if evt['impact']=='HIGH' else 11 if evt['impact']=='MEDIUM' else 153},0.12)"
+                    instr_tags = " ".join(f'<span class="rss-tag rss-tag-{i.lower()}">{i}</span>' for i in evt.get('instruments', []))
+                    st.markdown(f"""<div style="font-size:11px;padding:3px 0;display:flex;align-items:center;gap:6px;">
+                        <span style="font-size:8px;font-weight:800;padding:2px 6px;border-radius:3px;background:{impact_bg};color:{impact_color};">{evt['impact']}</span>
+                        <span style="color:#e8ecf4;">{html_escape(evt['title'][:80])}</span>
+                        {instr_tags}
+                    </div>""", unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+
+            # ── News Articles ──
             if spike['news']:
                 st.markdown('<div style="margin-top:6px;padding-top:6px;border-top:1px solid #263054;">', unsafe_allow_html=True)
+                st.markdown('<div style="font-size:9px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Related Headlines</div>', unsafe_allow_html=True)
                 for article in spike['news']:
                     source = f" — {article['source']}" if article['source'] else ""
                     safe_link = article['link'] if article['link'].startswith(('http://', 'https://')) else '#'
@@ -2051,8 +2195,12 @@ def main():
                         <span style="color:#6b7a99;font-size:9px;">{source}</span>
                     </div>""", unsafe_allow_html=True)
                 st.markdown('</div>', unsafe_allow_html=True)
-            else:
-                st.markdown('<div style="font-size:11px;color:#6b7a99;margin-top:4px;">No matching news found for this date</div>', unsafe_allow_html=True)
+
+            # ── Fallback: no news AND no events ──
+            if not spike['news'] and not econ_evts and not asset_moves:
+                st.markdown('<div style="font-size:11px;color:#6b7a99;margin-top:4px;font-style:italic;">No catalyst identified — likely driven by options/futures expiry, institutional repositioning, or overseas session flows. Check economic calendar for scheduled releases.</div>', unsafe_allow_html=True)
+            elif not spike['news'] and not econ_evts:
+                st.markdown('<div style="font-size:11px;color:#6b7a99;margin-top:4px;font-style:italic;">No headline catalyst found — move likely driven by correlated asset flows shown above.</div>', unsafe_allow_html=True)
 
             st.markdown('</div>', unsafe_allow_html=True)
     else:
