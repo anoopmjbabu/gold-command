@@ -1646,6 +1646,33 @@ def main():
             🔒 Priority Refresh (1 min)<br>
         </div>""", unsafe_allow_html=True)
 
+        st.markdown('<div style="border-bottom:1px solid #1a2240;margin:12px 0;"></div>', unsafe_allow_html=True)
+
+        # ICMarkets Live Price Widget + Partner Banner
+        st.markdown("""<div style="text-align:center;margin-bottom:6px;">
+            <a href="https://icmarkets.com/?camp=87951" target="_blank">
+                <img src="https://promo.icmarkets.com/Logos/2021/400x110/BAN_ICM_black_400x110.png"
+                     style="width:100%;max-width:260px;border-radius:6px;" alt="ICMarkets"/>
+            </a>
+        </div>""", unsafe_allow_html=True)
+
+        st.components.v1.iframe(
+            src="https://secure.icmarkets.com//Partner/Widget/PriceWidget/87951",
+            width=273,
+            height=480,
+            scrolling=False,
+        )
+
+        st.markdown("""<div style="text-align:center;margin-top:4px;">
+            <a href="https://icmarkets.com/?camp=87951" target="_blank"
+               style="font-size:9px;color:#60a5fa;text-decoration:none;font-weight:600;">
+                Open Live Account →
+            </a>
+            <span style="font-size:7px;color:#3d4b6b;display:block;margin-top:3px;">
+                Raw spreads from 0.0 pips · ASIC regulated
+            </span>
+        </div>""", unsafe_allow_html=True)
+
     # Auto-refresh trigger
     if auto_refresh:
         if 'last_refresh' not in st.session_state:
@@ -2150,6 +2177,25 @@ def main():
                 The engine scans 15-minute bars at 4H-derived S/R zones aligned with the daily trend.</div>
             </div>""", unsafe_allow_html=True)
 
+        # ── ICMarkets contextual CTA (post-signals) ──
+        st.markdown("""<a href="https://icmarkets.com/?camp=87951" target="_blank" style="text-decoration:none;display:block;">
+            <div style="background:linear-gradient(135deg,rgba(37,99,235,0.06),rgba(37,99,235,0.02));
+                border:1px solid rgba(59,130,246,0.12);border-radius:8px;padding:10px 16px;
+                display:flex;align-items:center;justify-content:space-between;margin:12px 0 16px;">
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <span style="font-size:16px;">⚡</span>
+                    <div>
+                        <div style="font-size:10px;font-weight:700;color:#60a5fa;">Ready to trade these signals?</div>
+                        <div style="font-size:9px;color:#6b7a99;">Execute XAU/USD trades with raw spreads from 0.0 pips on ICMarkets</div>
+                    </div>
+                </div>
+                <div style="background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;
+                    font-size:9px;font-weight:700;padding:6px 14px;border-radius:5px;white-space:nowrap;">
+                    Open Account →
+                </div>
+            </div>
+        </a>""", unsafe_allow_html=True)
+
         # ── FULL-WIDTH TRADINGVIEW CHART ──
         tv_html = """
         <html><head><style>
@@ -2541,6 +2587,12 @@ def main():
             <span style="font-size:8px;color:#3d4b6b;">🎯 Multi-TF Signal Engine</span>
             <span style="font-size:8px;color:#3d4b6b;">🧠 Auto-Computed Macro Analysis</span>
             <span style="font-size:8px;color:#3d4b6b;">📰 Live RSS News Feed</span>
+        </div>
+        <div style="margin-bottom:8px;">
+            <a href="https://icmarkets.com/?camp=87951" target="_blank"
+               style="font-size:9px;color:#60a5fa;text-decoration:none;font-weight:600;">
+                Trade XAU/USD on ICMarkets →
+            </a>
         </div>
         <div style="font-size:8px;color:#3d4b6b;letter-spacing:0.5px;">
             Data: Yahoo Finance, Google News RSS&nbsp;&nbsp;|&nbsp;&nbsp;Charts: TradingView&nbsp;&nbsp;|&nbsp;&nbsp;Signals: Proprietary Engine<br>
