@@ -928,7 +928,6 @@ def compute_correlations(gold_df, corr_data, window=30):
     for name, df in corr_data.items():
         try:
             other_returns = df['Close'].pct_change().tail(window)
-            # Align indices
             common = gold_returns.index.intersection(other_returns.index)
             if len(common) > 10:
                 corr = gold_returns.loc[common].corr(other_returns.loc[common])
@@ -937,6 +936,15 @@ def compute_correlations(gold_df, corr_data, window=30):
         except Exception:
             pass
     return results
+
+
+def compute_multi_window_correlations(gold_df, corr_data):
+    """Compute correlations across 7D, 30D, 90D windows."""
+    return {
+        '7D': compute_correlations(gold_df, corr_data, window=7),
+        '30D': compute_correlations(gold_df, corr_data, window=30),
+        '90D': compute_correlations(gold_df, corr_data, window=90),
+    }
 
 
 def compute_ranges(df):
@@ -1450,7 +1458,12 @@ def get_instrument_icon(name):
         "ATR": '<span class="icon-wrap icon-bond"><svg viewBox="0 0 24 24" fill="none"><line x1="4" y1="12" x2="20" y2="12" stroke="#3b82f6" stroke-width="1" opacity="0.3"/><line x1="12" y1="5" x2="12" y2="19" stroke="#3b82f6" stroke-width="1" opacity="0.3"/><path d="M6 16L10 8l4 10 4-12" stroke="#3b82f6" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>',
         "Session Bias": '<span class="icon-wrap icon-vix"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#f0b90b" stroke-width="1.5" fill="none" opacity="0.4"/><path d="M12 7v5l3.5 3.5" stroke="#f0b90b" stroke-width="1.5" stroke-linecap="round"/></svg></span>',
     }
-    return icons.get(name, '')
+    # Alias mapping for short names used in correlations / corr_data
+    _aliases = {
+        "DXY": "USD (DXY)", "US 10Y": "US 10Y Yield", "VIX": "VIX (Fear Index)",
+        "EUR/USD": "USD (DXY)", "Silver": "Gold Price", "BTC/USD": "S&P 500",
+    }
+    return icons.get(name, icons.get(_aliases.get(name, ''), ''))
 
 
 def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, trade_signals, signal_trend, ranges, pivots, key_levels):
@@ -1672,6 +1685,7 @@ def main():
     econ_events = fetch_economic_calendar()
     spikes_correlated = correlate_news_to_spikes(spikes, news, corr_data=corr_data, econ_events=econ_events)
     correlations = compute_correlations(gold_df, corr_data)
+    multi_corr = compute_multi_window_correlations(gold_df, corr_data)
     up_probs, down_probs = compute_probability_targets(gold_df)
     mtf_probs = compute_multi_tf_probability(gold_df)
     pivots = compute_pivot_levels(gold_df)
@@ -1734,6 +1748,28 @@ def main():
                 </div>
             </div>
         </div>""", unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════════════
+    # STATS TICKER (social proof + live metrics)
+    # ══════════════════════════════════════════════════
+    n_signals = len(trade_signals)
+    n_drivers = len(drivers)
+    n_bull = sum(1 for d in drivers if d[2] == "BULLISH")
+    n_spikes = len(spikes_correlated) if spikes_correlated else 0
+    n_news = len(news) if news else 0
+    st.markdown(f"""<div style="display:flex;justify-content:center;gap:24px;padding:8px 0;margin-bottom:12px;
+        border-bottom:1px solid rgba(26,34,64,0.4);flex-wrap:wrap;">
+        <span style="font-size:10px;color:#5a6a8a;display:flex;align-items:center;gap:4px;">
+            <span style="color:#f0b90b;font-weight:700;">{n_signals}</span> Active Signals</span>
+        <span style="font-size:10px;color:#5a6a8a;display:flex;align-items:center;gap:4px;">
+            <span style="color:#10b981;font-weight:700;">{n_bull}/{n_drivers}</span> Bullish Drivers</span>
+        <span style="font-size:10px;color:#5a6a8a;display:flex;align-items:center;gap:4px;">
+            <span style="color:#a855f7;font-weight:700;">{n_spikes}</span> Volume Spikes (6M)</span>
+        <span style="font-size:10px;color:#5a6a8a;display:flex;align-items:center;gap:4px;">
+            <span style="color:#ef4444;font-weight:700;">{n_news}</span> Live Headlines</span>
+        <span style="font-size:10px;color:#5a6a8a;display:flex;align-items:center;gap:4px;">
+            <span style="color:#3b82f6;font-weight:700;">6</span> Intelligence Modules</span>
+    </div>""", unsafe_allow_html=True)
 
     # ══════════════════════════════════════════════════
     # DISPLAY — ABOVE TABS (always visible)
@@ -2193,17 +2229,33 @@ def main():
                 </div>""", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
-            # ── CORRELATIONS ──
-            tt_corr = tooltip("Correlation", "30D Correlations")
+            # ── CORRELATIONS (multi-window) ──
+            tt_corr = tooltip("Correlation", "Correlations")
             st.markdown(f"""<div class="intel-card"><h3>{tt_corr}
                 <span class="pill pill-model">COMPUTED</span></h3>""", unsafe_allow_html=True)
-            for name, val in correlations.items():
+            corr_window = st.radio("Window", ["7D", "30D", "90D"], index=1, horizontal=True, key="corr_window", label_visibility="collapsed")
+            active_corr = multi_corr.get(corr_window, correlations)
+            for name, val in active_corr.items():
                 color = "#10b981" if val > 0.3 else "#ef4444" if val < -0.3 else "#6b7a99"
                 bg = "rgba(16,185,129,0.12)" if val > 0.3 else "rgba(239,68,68,0.12)" if val < -0.3 else "rgba(107,122,153,0.08)"
                 corr_icon = get_instrument_icon(name)
-                st.markdown(f"""<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;align-items:center;">
-                    <span>{corr_icon} {name}</span>
-                    <span class="corr-cell" style="background:{bg};color:{color};padding:2px 10px;border-radius:3px;min-width:55px;">{val:+.2f}</span>
+                # Interpretation label
+                if val > 0.6:
+                    interp = "strong +"
+                elif val > 0.3:
+                    interp = "moderate +"
+                elif val < -0.6:
+                    interp = "strong −"
+                elif val < -0.3:
+                    interp = "moderate −"
+                else:
+                    interp = "weak"
+                st.markdown(f"""<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12px;align-items:center;border-bottom:1px solid rgba(26,34,64,0.3);">
+                    <span style="display:flex;align-items:center;gap:4px;">{corr_icon} {name}</span>
+                    <span style="display:flex;align-items:center;gap:6px;">
+                        <span style="font-size:9px;color:#5a6a8a;">{interp}</span>
+                        <span class="corr-cell" style="background:{bg};color:{color};padding:3px 10px;border-radius:4px;min-width:55px;text-align:center;font-family:JetBrains Mono;font-weight:600;">{val:+.2f}</span>
+                    </span>
                 </div>""", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
@@ -2266,71 +2318,80 @@ def main():
             for spike in spikes_correlated[:10]:
                 dir_class = "spike-up" if spike['direction'] == 'UP' else "spike-down"
                 dir_arrow = "▲" if spike['direction'] == 'UP' else "▼"
+                dir_color = "#10b981" if spike['direction'] == 'UP' else "#ef4444"
+                dir_bg = "rgba(16,185,129,0.08)" if spike['direction'] == 'UP' else "rgba(239,68,68,0.08)"
 
-                st.markdown(f"""<div class="spike-card">
-                    <div class="spike-header">
-                        <span class="spike-date">{spike['date']}</span>
-                        <span>
-                            <span class="spike-vol {dir_class}">{dir_arrow} {spike['direction']} ${abs(spike['change']):,.2f} ({spike['change_pct']:+.2f}%)</span>
-                            &nbsp;
-                            <span style="font-size:10px;color:#f0b90b;font-weight:600;">{spike['vol_ratio']:.1f}x VOL</span>
-                        </span>
-                    </div>
-                    <div style="font-size:11px;color:#a8b2c8;">
-                        O: ${spike['open']:,.2f} &nbsp; H: ${spike['high']:,.2f} &nbsp; L: ${spike['low']:,.2f} &nbsp; C: ${spike['close']:,.2f}
+                # ── SECTION 1: Price Action ──
+                st.markdown(f"""<div class="spike-card" style="border-left:3px solid {dir_color};">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+                        <div>
+                            <div style="font-size:14px;font-weight:800;color:#e8ecf4;">{spike['date']}</div>
+                            <div style="font-size:11px;color:#a8b2c8;margin-top:2px;font-family:JetBrains Mono;">
+                                O: ${spike['open']:,.2f} &nbsp; H: ${spike['high']:,.2f} &nbsp; L: ${spike['low']:,.2f} &nbsp; C: ${spike['close']:,.2f}
+                            </div>
+                        </div>
+                        <div style="text-align:right;">
+                            <div style="font-size:13px;font-weight:800;color:{dir_color};font-family:JetBrains Mono;">
+                                {dir_arrow} ${abs(spike['change']):,.2f} ({spike['change_pct']:+.2f}%)
+                            </div>
+                            <div style="font-size:10px;color:#f0b90b;font-weight:700;margin-top:2px;">{spike['vol_ratio']:.1f}x Avg Volume</div>
+                        </div>
                     </div>
                 """, unsafe_allow_html=True)
 
-                # ── Correlated Asset Moves (same-day context) ──
+                # ── SECTION 2: Economic Calendar ──
+                econ_evts = spike.get('econ_events', [])
+                if econ_evts:
+                    cal_html = '<div style="background:rgba(15,21,40,0.6);border-radius:8px;padding:10px 12px;margin-bottom:10px;border:1px solid #1a2240;">'
+                    cal_html += '<div style="font-size:9px;font-weight:800;color:#f59e0b;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;display:flex;align-items:center;gap:6px;">&#128197; Economic Calendar</div>'
+                    for evt in econ_evts[:3]:
+                        ic = "#ef4444" if evt['impact'] == 'HIGH' else "#f59e0b" if evt['impact'] == 'MEDIUM' else "#6b7a99"
+                        ibg = f"rgba({239 if evt['impact']=='HIGH' else 245 if evt['impact']=='MEDIUM' else 107},{68 if evt['impact']=='HIGH' else 158 if evt['impact']=='MEDIUM' else 122},{68 if evt['impact']=='HIGH' else 11 if evt['impact']=='MEDIUM' else 153},0.15)"
+                        dot = "&#128308;" if evt['impact'] == 'HIGH' else "&#128992;" if evt['impact'] == 'MEDIUM' else "&#9898;"
+                        cal_html += f'<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:11px;">'
+                        cal_html += f'<span style="font-size:8px;font-weight:800;padding:2px 8px;border-radius:3px;background:{ibg};color:{ic};min-width:40px;text-align:center;">{evt["impact"]}</span>'
+                        cal_html += f'<span style="color:#e8ecf4;flex:1;">{html_escape(evt["title"][:70])}</span>'
+                        cal_html += '</div>'
+                    cal_html += '</div>'
+                    st.markdown(cal_html, unsafe_allow_html=True)
+
+                # ── SECTION 3: Correlated Asset Moves ──
                 asset_moves = spike.get('asset_moves', {})
                 if asset_moves:
-                    moves_html = '<div style="margin-top:8px;padding-top:6px;border-top:1px solid #263054;">'
-                    moves_html += '<div style="font-size:9px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Same-Day Moves</div>'
-                    moves_html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">'
+                    moves_html = '<div style="background:rgba(15,21,40,0.6);border-radius:8px;padding:10px 12px;margin-bottom:10px;border:1px solid #1a2240;">'
+                    moves_html += '<div style="font-size:9px;font-weight:800;color:#3b82f6;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;display:flex;align-items:center;gap:6px;">&#128200; Same-Day Cross-Market Moves</div>'
+                    moves_html += '<div style="display:flex;flex-wrap:wrap;gap:6px;">'
                     for asset_name, mv in asset_moves.items():
                         mv_color = "#10b981" if mv['change_pct'] >= 0 else "#ef4444"
+                        mv_bg = "rgba(16,185,129,0.08)" if mv['change_pct'] >= 0 else "rgba(239,68,68,0.08)"
                         mv_arrow = "▲" if mv['change_pct'] >= 0 else "▼"
                         asset_icon = get_instrument_icon(asset_name)
-                        moves_html += f'<span style="font-size:10px;padding:3px 8px;background:rgba(26,34,64,0.5);border-radius:4px;display:inline-flex;align-items:center;gap:4px;">'
-                        moves_html += f'{asset_icon}<span style="color:#a8b2c8;">{asset_name}</span> '
-                        moves_html += f'<span style="color:{mv_color};font-family:JetBrains Mono;font-weight:600;">{mv_arrow}{mv["change_pct"]:+.2f}%</span></span>'
+                        moves_html += (f'<div style="display:inline-flex;align-items:center;gap:5px;padding:5px 10px;'
+                                       f'background:{mv_bg};border:1px solid {mv_color}22;border-radius:6px;font-size:11px;">'
+                                       f'{asset_icon}<span style="color:#a8b2c8;font-weight:600;">{asset_name}</span>'
+                                       f'<span style="color:{mv_color};font-family:JetBrains Mono;font-weight:700;">'
+                                       f'{mv_arrow} {mv["change_pct"]:+.2f}%</span></div>')
                     moves_html += '</div></div>'
                     st.markdown(moves_html, unsafe_allow_html=True)
 
-                # ── Economic Calendar Events ──
-                econ_evts = spike.get('econ_events', [])
-                if econ_evts:
-                    st.markdown('<div style="margin-top:6px;padding-top:6px;border-top:1px solid #263054;">', unsafe_allow_html=True)
-                    st.markdown('<div style="font-size:9px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Economic Events</div>', unsafe_allow_html=True)
-                    for evt in econ_evts[:2]:
-                        impact_color = "#ef4444" if evt['impact'] == 'HIGH' else "#f59e0b" if evt['impact'] == 'MEDIUM' else "#6b7a99"
-                        impact_bg = f"rgba({239 if evt['impact']=='HIGH' else 245 if evt['impact']=='MEDIUM' else 107},{68 if evt['impact']=='HIGH' else 158 if evt['impact']=='MEDIUM' else 122},{68 if evt['impact']=='HIGH' else 11 if evt['impact']=='MEDIUM' else 153},0.12)"
-                        instr_tags = " ".join(f'<span class="rss-tag rss-tag-{i.lower()}">{i}</span>' for i in evt.get('instruments', []))
-                        st.markdown(f"""<div style="font-size:11px;padding:3px 0;display:flex;align-items:center;gap:6px;">
-                            <span style="font-size:8px;font-weight:800;padding:2px 6px;border-radius:3px;background:{impact_bg};color:{impact_color};">{evt['impact']}</span>
-                            <span style="color:#e8ecf4;">{html_escape(evt['title'][:80])}</span>
-                            {instr_tags}
-                        </div>""", unsafe_allow_html=True)
-                    st.markdown('</div>', unsafe_allow_html=True)
-
-                # ── News Articles ──
+                # ── SECTION 4: Related Headlines ──
                 if spike['news']:
-                    st.markdown('<div style="margin-top:6px;padding-top:6px;border-top:1px solid #263054;">', unsafe_allow_html=True)
-                    st.markdown('<div style="font-size:9px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Related Headlines</div>', unsafe_allow_html=True)
+                    news_html = '<div style="background:rgba(15,21,40,0.6);border-radius:8px;padding:10px 12px;margin-bottom:6px;border:1px solid #1a2240;">'
+                    news_html += '<div style="font-size:9px;font-weight:800;color:#ef4444;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;display:flex;align-items:center;gap:6px;">&#128240; Related Headlines</div>'
                     for article in spike['news']:
                         source = f" — {article['source']}" if article['source'] else ""
                         safe_link = article['link'] if article['link'].startswith(('http://', 'https://')) else '#'
-                        st.markdown(f"""<div style="font-size:11px;padding:3px 0;">
-                            📰 <a href="{safe_link}" target="_blank" rel="noopener noreferrer" style="color:#3b82f6;text-decoration:none;">{html_escape(article['title'])}</a>
-                            <span style="color:#6b7a99;font-size:9px;">{source}</span>
-                        </div>""", unsafe_allow_html=True)
-                    st.markdown('</div>', unsafe_allow_html=True)
+                        news_html += (f'<div style="padding:4px 0;border-bottom:1px solid rgba(26,34,64,0.3);font-size:11px;">'
+                                      f'<a href="{safe_link}" target="_blank" rel="noopener noreferrer" style="color:#c8d0e4;text-decoration:none;">{html_escape(article["title"])}</a>'
+                                      f'<span style="color:#5a6a8a;font-size:9px;">{source}</span></div>')
+                    news_html += '</div>'
+                    st.markdown(news_html, unsafe_allow_html=True)
 
-                # ── Fallback: no news AND no events ──
+                # ── Fallback ──
                 if not spike['news'] and not econ_evts and not asset_moves:
-                    st.markdown('<div style="font-size:11px;color:#6b7a99;margin-top:4px;font-style:italic;">No catalyst identified — likely driven by options/futures expiry, institutional repositioning, or overseas session flows. Check economic calendar for scheduled releases.</div>', unsafe_allow_html=True)
+                    st.markdown('<div style="font-size:11px;color:#5a6a8a;padding:8px 12px;background:rgba(15,21,40,0.4);border-radius:6px;border-left:2px solid #f59e0b;font-style:italic;">No catalyst identified — likely driven by options/futures expiry, institutional repositioning, or overseas session flows.</div>', unsafe_allow_html=True)
                 elif not spike['news'] and not econ_evts:
-                    st.markdown('<div style="font-size:11px;color:#6b7a99;margin-top:4px;font-style:italic;">No headline catalyst found — move likely driven by correlated asset flows shown above.</div>', unsafe_allow_html=True)
+                    st.markdown('<div style="font-size:11px;color:#5a6a8a;padding:8px 12px;background:rgba(15,21,40,0.4);border-radius:6px;border-left:2px solid #3b82f6;font-style:italic;">No headline catalyst — move likely driven by correlated asset flows shown above.</div>', unsafe_allow_html=True)
 
                 st.markdown('</div>', unsafe_allow_html=True)
         else:
@@ -2345,34 +2406,69 @@ def main():
                 <span class="pill pill-live">RSS · AUTO-REFRESH</span>
             </div>""", unsafe_allow_html=True)
             if news:
-                # Instrument impact keyword mapping
+                # Directional impact rules: (keywords, instrument_name, typical_gold_impact, icon_color)
                 _impact_rules = {
-                    'XAU': (['gold', 'xau', 'bullion', 'precious metal', 'safe haven', 'gold price', 'gold demand'], 'rss-tag-xau'),
-                    'USD': (['dollar', 'usd', 'dxy', 'fed', 'federal reserve', 'interest rate', 'rate hike', 'rate cut', 'fomc', 'powell', 'treasury'], 'rss-tag-usd'),
-                    'OIL': (['oil', 'crude', 'opec', 'brent', 'wti', 'petroleum', 'energy'], 'rss-tag-oil'),
-                    'BOND': (['bond', 'yield', 'treasury', '10-year', '10y', 'debt', 'sovereign'], 'rss-tag-bond'),
-                    'GEO': (['war', 'attack', 'strike', 'nuclear', 'bomb', 'missile', 'invasion', 'crisis', 'emergency', 'sanctions', 'conflict', 'geopolitical', 'tariff', 'trade war'], 'rss-tag-geo'),
-                    'SPX': (['stock', 's&p', 'nasdaq', 'dow', 'equity', 'wall street', 'rally', 'selloff', 'correction', 'bear market', 'bull market'], 'rss-tag-spx'),
+                    'gold': {
+                        'keywords': ['gold', 'xau', 'bullion', 'precious metal', 'safe haven', 'gold price', 'gold demand', 'gold reserve'],
+                        'name': 'Gold', 'icon': '&#129351;', 'color': '#f0b90b',
+                    },
+                    'dollar': {
+                        'keywords': ['dollar', 'usd', 'dxy', 'fed', 'federal reserve', 'interest rate', 'rate hike', 'rate cut', 'fomc', 'powell'],
+                        'name': 'Dollar', 'icon': '&#36;', 'color': '#10b981',
+                    },
+                    'oil': {
+                        'keywords': ['oil', 'crude', 'opec', 'brent', 'wti', 'petroleum', 'energy'],
+                        'name': 'Oil', 'icon': '&#128167;', 'color': '#8b5cf6',
+                    },
+                    'bonds': {
+                        'keywords': ['bond', 'yield', 'treasury', '10-year', '10y', 'debt', 'sovereign'],
+                        'name': 'Bonds', 'icon': '&#128196;', 'color': '#3b82f6',
+                    },
+                    'geopolitical': {
+                        'keywords': ['war', 'attack', 'strike', 'nuclear', 'bomb', 'missile', 'invasion', 'crisis', 'emergency', 'sanctions', 'conflict', 'geopolitical', 'tariff', 'trade war'],
+                        'name': 'Geopolitical', 'icon': '&#9888;', 'color': '#ef4444',
+                        # Geopolitical events: Gold ↑, Stocks ↓, VIX ↑
+                        'impacts': [('Gold', '↑', '#10b981'), ('Stocks', '↓', '#ef4444'), ('VIX', '↑', '#f59e0b')],
+                    },
+                    'stocks': {
+                        'keywords': ['stock', 's&p', 'nasdaq', 'dow', 'equity', 'wall street', 'rally', 'selloff', 'correction', 'bear market', 'bull market'],
+                        'name': 'Stocks', 'icon': '&#128200;', 'color': '#f59e0b',
+                    },
                 }
                 for article in news[:20]:
                     date_str = article['published'].strftime('%b %d, %H:%M') if article['published'] else ""
                     source = f" — {article['source']}" if article['source'] else ""
                     title_lower = article['title'].lower()
-                    # Detect instrument impacts
-                    impact_tags_html = ""
+
+                    # Detect impacts with directional chips
+                    impact_chips = ""
                     is_breaking = False
-                    for tag_label, (keywords, tag_class) in _impact_rules.items():
-                        if any(kw in title_lower for kw in keywords):
-                            impact_tags_html += f'<span class="rss-tag {tag_class}">{tag_label}</span>'
-                            if tag_label == 'GEO':
+                    matched_cats = []
+                    for cat_key, rule in _impact_rules.items():
+                        if any(kw in title_lower for kw in rule['keywords']):
+                            matched_cats.append(cat_key)
+                            if cat_key == 'geopolitical':
                                 is_breaking = True
+                                # Show directional impacts for geopolitical events
+                                for instr, direction, dcolor in rule.get('impacts', []):
+                                    impact_chips += (f'<span style="font-size:9px;padding:2px 6px;border-radius:3px;'
+                                                     f'background:{dcolor}15;color:{dcolor};font-weight:700;'
+                                                     f'display:inline-flex;align-items:center;gap:2px;">'
+                                                     f'{instr} {direction}</span> ')
+                            else:
+                                c = rule['color']
+                                impact_chips += (f'<span style="font-size:9px;padding:2px 6px;border-radius:3px;'
+                                                 f'background:{c}15;color:{c};font-weight:700;'
+                                                 f'display:inline-flex;align-items:center;gap:3px;">'
+                                                 f'{rule["icon"]} {rule["name"]}</span> ')
+
                     breaking_class = ' rss-breaking' if is_breaking else ''
-                    prefix = '<span style="color:#ef4444;font-weight:700;font-size:10px;">⚡ BREAKING </span>' if is_breaking else ''
+                    prefix = '<span style="color:#ef4444;font-weight:700;font-size:10px;">&#9889; BREAKING </span>' if is_breaking else ''
                     safe_link = article['link'] if article['link'].startswith(('http://', 'https://')) else '#'
                     st.markdown(f"""<div class="rss-item{breaking_class}">
                         <div class="rss-title">
                             {prefix}<a href="{safe_link}" target="_blank" rel="noopener noreferrer">{article['title']}</a>
-                            <div class="rss-impact-tags">{impact_tags_html}</div>
+                            <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">{impact_chips}</div>
                             <div style="font-size:9px;color:#6b7a99;margin-top:2px;">{date_str}{source}</div>
                         </div>
                     </div>""", unsafe_allow_html=True)
@@ -2392,11 +2488,13 @@ def main():
                 prv = df['Close'].iloc[-2]
                 chg = ((cur / prv) - 1) * 100
                 color = "#10b981" if chg >= 0 else "#ef4444"
-                st.markdown(f"""<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #1e2745;font-size:12px;">
-                    <span style="color:#a8b2c8">{name}</span>
-                    <span>
-                        <span style="font-family:JetBrains Mono;color:#e8ecf4">{cur:,.2f}</span>
-                        <span style="font-family:JetBrains Mono;color:{color};margin-left:8px">{chg:+.2f}%</span>
+                arrow = "▲" if chg >= 0 else "▼"
+                ci_icon = get_instrument_icon(name)
+                st.markdown(f"""<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1e2745;font-size:12px;align-items:center;">
+                    <span style="display:flex;align-items:center;gap:4px;color:#a8b2c8">{ci_icon} {name}</span>
+                    <span style="display:flex;align-items:center;gap:8px;">
+                        <span style="font-family:JetBrains Mono;color:#e8ecf4;font-weight:600;">{cur:,.2f}</span>
+                        <span style="font-family:JetBrains Mono;color:{color};font-weight:600;min-width:60px;text-align:right;">{arrow} {chg:+.2f}%</span>
                     </span>
                 </div>""", unsafe_allow_html=True)
 
