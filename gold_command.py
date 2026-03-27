@@ -460,8 +460,121 @@ header {visibility: hidden;}
     height: 1px; margin: 24px 0;
     background: linear-gradient(90deg, transparent, #1a2240, transparent);
 }
+
+/* ═══ Beginner Tooltips ═══ */
+.tt-wrap {
+    position: relative; display: inline-flex; align-items: center; gap: 3px; cursor: help;
+}
+.tt-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: rgba(240,185,11,0.12); color: #f0b90b;
+    font-size: 9px; font-weight: 800; flex-shrink: 0;
+    border: 1px solid rgba(240,185,11,0.2);
+    transition: background 0.2s;
+}
+.tt-wrap:hover .tt-icon { background: rgba(240,185,11,0.25); }
+.tt-bubble {
+    visibility: hidden; opacity: 0; position: absolute;
+    bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+    background: #1a2240; color: #c8d0e4; border: 1px solid rgba(240,185,11,0.2);
+    border-radius: 8px; padding: 10px 14px; font-size: 11px; line-height: 1.5;
+    width: 240px; z-index: 9999; pointer-events: none;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    transition: opacity 0.2s, visibility 0.2s;
+    font-weight: 400; letter-spacing: 0; text-transform: none;
+}
+.tt-bubble::after {
+    content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+    border: 6px solid transparent; border-top-color: #1a2240;
+}
+.tt-wrap:hover .tt-bubble { visibility: visible; opacity: 1; }
+@media (max-width: 768px) {
+    .tt-bubble { width: 200px; font-size: 10px; padding: 8px 10px; }
+}
+
+/* ═══ Multi-TF Probability Bars ═══ */
+.prob-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 0; font-size: 12px;
+}
+.prob-label { color: #8892ab; min-width: 60px; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+.prob-track {
+    flex: 1; height: 8px; background: rgba(255,255,255,0.04);
+    border-radius: 4px; overflow: hidden; position: relative;
+}
+.prob-fill {
+    height: 100%; border-radius: 4px; transition: width 0.5s ease;
+}
+.prob-val { color: #e8ecf4; font-family: 'JetBrains Mono', monospace; font-size: 11px; min-width: 40px; text-align: right; font-weight: 600; }
+
+/* ═══ RSS Live Ticker ═══ */
+.rss-ticker-wrap {
+    background: linear-gradient(135deg, #0b1022, #0f1528);
+    border: 1px solid #1a2240; border-radius: 10px;
+    padding: 12px 16px; margin-bottom: 10px;
+}
+.rss-item {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding: 8px 0; border-bottom: 1px solid rgba(26,34,64,0.5);
+    font-size: 12px;
+}
+.rss-item:last-child { border-bottom: none; }
+.rss-title { color: #c8d0e4; flex: 1; line-height: 1.4; }
+.rss-title a { color: #c8d0e4; text-decoration: none; }
+.rss-title a:hover { color: #f0b90b; }
+.rss-impact-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+.rss-tag {
+    font-size: 8px; font-weight: 700; padding: 2px 6px; border-radius: 3px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+}
+.rss-tag-xau { background: rgba(240,185,11,0.15); color: #f0b90b; }
+.rss-tag-usd { background: rgba(16,185,129,0.15); color: #10b981; }
+.rss-tag-oil { background: rgba(139,92,246,0.15); color: #8b5cf6; }
+.rss-tag-bond { background: rgba(59,130,246,0.15); color: #3b82f6; }
+.rss-tag-geo { background: rgba(239,68,68,0.15); color: #ef4444; }
+.rss-tag-spx { background: rgba(245,158,11,0.15); color: #f59e0b; }
+.rss-breaking { border-left: 2px solid #ef4444; padding-left: 8px; }
 </style>
 """, unsafe_allow_html=True)
+
+
+# ═══════════════════════════════════════════════════════════════
+# BEGINNER TOOLTIPS / GLOSSARY
+# ═══════════════════════════════════════════════════════════════
+GLOSSARY = {
+    "RSI": "Relative Strength Index — measures how fast price is moving. Below 30 = oversold (may bounce up). Above 70 = overbought (may pull back). Think of it like a speedometer for gold.",
+    "ATR": "Average True Range — shows how much gold typically moves in a day (in dollars). Higher ATR = more volatile/bigger swings. Useful for setting stop-losses.",
+    "SMA": "Simple Moving Average — the average closing price over N days. SMA 20 = 20-day average. When price is above SMA, the trend is generally up.",
+    "Support": "A price level where gold tends to stop falling and bounce back up — like a floor. The more times price bounces off it, the stronger the support.",
+    "Resistance": "A price level where gold tends to stop rising and pull back — like a ceiling. Breakouts above resistance can signal new highs.",
+    "DXY": "The US Dollar Index — tracks the dollar against 6 major currencies. Gold and the dollar usually move in opposite directions. Strong dollar = gold headwind.",
+    "VIX": "The 'Fear Index' — measures expected stock market volatility. High VIX = fear → investors buy gold as a safe haven. VIX above 20 is elevated.",
+    "Pivot": "A calculated price level from yesterday's high, low, and close. Traders use pivots as potential turning points. R1/R2/R3 = resistance levels, S1/S2/S3 = support levels.",
+    "Fibonacci": "Levels based on the Fibonacci sequence (38.2%, 61.8%, etc.). These ratios often mark where price retraces or reverses. Widely watched by traders.",
+    "Risk/Reward": "Compares potential profit to potential loss. A 1:2 R/R means you risk $1 to potentially make $2. Higher is better — pros aim for at least 1:1.5.",
+    "Engulfing": "A strong reversal pattern where a candle completely 'engulfs' the previous one. Bullish engulfing at support = potential buy. Bearish engulfing at resistance = potential sell.",
+    "Pin Bar": "A candle with a very long wick (shadow) and small body. The long wick shows rejection of a price level. Pin bars at support or resistance are powerful signals.",
+    "Session Bias": "The overall directional lean based on macro factors. If most drivers are bullish (weak dollar, high VIX, oil up), the bias tilts bullish for gold.",
+    "Correlation": "How closely two instruments move together. +1.0 = move in sync. -1.0 = move opposite. Gold typically has negative correlation with USD and positive with silver.",
+    "Breakout": "When price moves decisively above resistance or below support. Breakouts often lead to strong moves. Volume confirmation makes breakouts more reliable.",
+    "Yield": "The return on government bonds (US 10Y). Rising yields = bonds compete with gold for investment. Falling yields = gold becomes more attractive.",
+    "Safe Haven": "Assets investors buy during uncertainty (wars, crashes, crises). Gold is the classic safe haven — demand rises when fear rises.",
+    "Macro Drivers": "Big-picture economic forces that move gold: dollar strength, bond yields, inflation fears, geopolitical risk, stock market moves, oil prices.",
+    "Daily Brief": "A plain-English summary of where gold stands right now — price action, key levels, macro alignment, and what to watch. Start here if you're new.",
+    "6M High/Low": "The highest and lowest prices gold reached in the past 6 months. These are key reference points — price near the 6M high means we're testing major resistance.",
+    "Probability": "The statistical likelihood of price reaching a target within a timeframe, based on historical volatility (ATR). Higher % = more likely based on past moves.",
+}
+
+def tooltip(term, label=None):
+    """Return HTML for an inline tooltip. Label defaults to term name."""
+    text = GLOSSARY.get(term, "")
+    if not text:
+        return label or term
+    display = label or term
+    return (f'<span class="tt-wrap">{display}'
+            f'<span class="tt-icon">?</span>'
+            f'<span class="tt-bubble"><b>{term}</b><br>{text}</span></span>')
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -763,6 +876,118 @@ def compute_probability_targets(df, days=30):
     down_probs = [(round(t, 0), round(prob_of_reaching(t) * 100, 0)) for t in targets_down]
 
     return up_probs, down_probs
+
+
+def compute_multi_tf_probability(df):
+    """
+    Compute directional probability for daily, weekly, and monthly timeframes.
+    Returns dict with 'daily', 'weekly', 'monthly' keys, each containing:
+      {'bullish': float, 'bearish': float, 'bias': str, 'rationale': str}
+    """
+    current = df['Close'].iloc[-1]
+    results = {}
+
+    # ── Daily probability (next 1-2 days) ──
+    sma_5 = df['Close'].tail(5).mean()
+    sma_20 = df['SMA_20'].iloc[-1] if 'SMA_20' in df.columns else df['Close'].tail(20).mean()
+    rsi = df['RSI_14'].iloc[-1] if 'RSI_14' in df.columns else 50
+    daily_bull = 50
+    rationale_parts = []
+    if current > sma_5:
+        daily_bull += 8
+        rationale_parts.append("above 5D avg")
+    else:
+        daily_bull -= 8
+        rationale_parts.append("below 5D avg")
+    if current > sma_20:
+        daily_bull += 7
+    else:
+        daily_bull -= 7
+    if rsi < 30:
+        daily_bull += 12  # Oversold bounce probability
+        rationale_parts.append("RSI oversold")
+    elif rsi > 70:
+        daily_bull -= 12  # Overbought pullback
+        rationale_parts.append("RSI overbought")
+    # Recent momentum — last 3 closes
+    recent_3 = df['Close'].tail(3)
+    up_days = sum(1 for i in range(1, len(recent_3)) if recent_3.iloc[i] > recent_3.iloc[i - 1])
+    if up_days >= 2:
+        daily_bull += 5
+        rationale_parts.append("recent momentum up")
+    elif up_days == 0:
+        daily_bull -= 5
+        rationale_parts.append("recent momentum down")
+    daily_bull = max(15, min(85, daily_bull))
+    results['daily'] = {
+        'bullish': round(daily_bull), 'bearish': round(100 - daily_bull),
+        'bias': 'BULLISH' if daily_bull > 55 else 'BEARISH' if daily_bull < 45 else 'NEUTRAL',
+        'rationale': ", ".join(rationale_parts[:3]) if rationale_parts else "mixed signals",
+    }
+
+    # ── Weekly probability (next 5 days) ──
+    sma_50 = df['SMA_50'].iloc[-1] if 'SMA_50' in df.columns else df['Close'].tail(50).mean()
+    weekly_bull = 50
+    w_parts = []
+    if current > sma_20:
+        weekly_bull += 10
+        w_parts.append("above 20D MA")
+    else:
+        weekly_bull -= 10
+        w_parts.append("below 20D MA")
+    if current > sma_50:
+        weekly_bull += 8
+    else:
+        weekly_bull -= 8
+    # Weekly trend: 5D price change direction
+    if len(df) >= 6:
+        week_chg = (current - df['Close'].iloc[-6]) / df['Close'].iloc[-6] * 100
+        if week_chg > 1:
+            weekly_bull += 7
+            w_parts.append(f"week up {week_chg:.1f}%")
+        elif week_chg < -1:
+            weekly_bull -= 7
+            w_parts.append(f"week down {week_chg:.1f}%")
+    weekly_bull = max(15, min(85, weekly_bull))
+    results['weekly'] = {
+        'bullish': round(weekly_bull), 'bearish': round(100 - weekly_bull),
+        'bias': 'BULLISH' if weekly_bull > 55 else 'BEARISH' if weekly_bull < 45 else 'NEUTRAL',
+        'rationale': ", ".join(w_parts[:3]) if w_parts else "mixed signals",
+    }
+
+    # ── Monthly probability (next 20 days) ──
+    monthly_bull = 50
+    m_parts = []
+    if current > sma_50:
+        monthly_bull += 12
+        m_parts.append("above 50D MA")
+    else:
+        monthly_bull -= 12
+        m_parts.append("below 50D MA")
+    # Monthly trend: 20D price change
+    if len(df) >= 21:
+        month_chg = (current - df['Close'].iloc[-21]) / df['Close'].iloc[-21] * 100
+        if month_chg > 3:
+            monthly_bull += 10
+            m_parts.append(f"month up {month_chg:.1f}%")
+        elif month_chg < -3:
+            monthly_bull -= 10
+            m_parts.append(f"month down {month_chg:.1f}%")
+        else:
+            m_parts.append(f"month {month_chg:+.1f}%")
+    # Volatility regime
+    daily_vol = df['Close'].pct_change().tail(20).std()
+    avg_vol = df['Close'].pct_change().tail(60).std() if len(df) >= 60 else daily_vol
+    if daily_vol > avg_vol * 1.3:
+        m_parts.append("high volatility")
+    monthly_bull = max(15, min(85, monthly_bull))
+    results['monthly'] = {
+        'bullish': round(monthly_bull), 'bearish': round(100 - monthly_bull),
+        'bias': 'BULLISH' if monthly_bull > 55 else 'BEARISH' if monthly_bull < 45 else 'NEUTRAL',
+        'rationale': ", ".join(m_parts[:3]) if m_parts else "mixed signals",
+    }
+
+    return results
 
 
 def compute_pivot_levels(df):
@@ -1243,6 +1468,7 @@ def main():
     spikes_correlated = correlate_news_to_spikes(spikes, news)
     correlations = compute_correlations(gold_df, corr_data)
     up_probs, down_probs = compute_probability_targets(gold_df)
+    mtf_probs = compute_multi_tf_probability(gold_df)
     pivots = compute_pivot_levels(gold_df)
     ranges = compute_ranges(gold_df)
     drivers = assess_macro_drivers(gold_df, corr_data)
@@ -1330,6 +1556,12 @@ def main():
     icon_atr = get_instrument_icon("ATR")
     icon_bias = get_instrument_icon("Session Bias")
 
+    tt_rsi = tooltip("RSI", f"{icon_rsi} RSI (14)")
+    tt_atr = tooltip("ATR", f"{icon_atr} ATR (14)")
+    tt_bias = tooltip("Session Bias", f"{icon_bias} Session Bias")
+    tt_6mh = tooltip("6M High/Low", f"{icon_gold} 6M High")
+    tt_6ml = tooltip("6M High/Low", f"{icon_gold} 6M Low")
+
     st.markdown(f"""
     <div class="kpi-grid">
         <div class="kpi-card" style="--kpi-accent: #f0b90b;">
@@ -1338,27 +1570,27 @@ def main():
             <div class="kpi-delta {'up' if daily_chg >= 0 else 'down'}">{chg_arrow} ${abs(daily_chg):,.2f} ({daily_pct:+.1f}%)</div>
         </div>
         <div class="kpi-card" style="--kpi-accent: {rsi_color};">
-            <div class="kpi-label">{icon_rsi} RSI (14)</div>
+            <div class="kpi-label">{tt_rsi}</div>
             <div class="kpi-value">{rsi_val:.1f}</div>
             <div class="kpi-delta neutral" style="color:{rsi_color};background:rgba(0,0,0,0.2);">{rsi_status}</div>
         </div>
         <div class="kpi-card" style="--kpi-accent: #3b82f6;">
-            <div class="kpi-label">{icon_atr} ATR (14)</div>
+            <div class="kpi-label">{tt_atr}</div>
             <div class="kpi-value">${gold_df['ATR_14'].iloc[-1]:,.0f}</div>
             <div class="kpi-delta neutral">Daily Range</div>
         </div>
         <div class="kpi-card" style="--kpi-accent: #ef4444;">
-            <div class="kpi-label">{icon_gold} 6M High</div>
+            <div class="kpi-label">{tt_6mh}</div>
             <div class="kpi-value">${high_52w:,.0f}</div>
             <div class="kpi-delta {'down' if current < high_52w else 'up'}">{((current/high_52w)-1)*100:+.1f}%</div>
         </div>
         <div class="kpi-card" style="--kpi-accent: #10b981;">
-            <div class="kpi-label">{icon_gold} 6M Low</div>
+            <div class="kpi-label">{tt_6ml}</div>
             <div class="kpi-value">${low_52w:,.0f}</div>
             <div class="kpi-delta up">{((current/low_52w)-1)*100:+.1f}%</div>
         </div>
         <div class="kpi-card" style="--kpi-accent: {bias_kpi_color};">
-            <div class="kpi-label">{icon_bias} Session Bias</div>
+            <div class="kpi-label">{tt_bias}</div>
             <div class="kpi-value" style="color:{bias_kpi_color};font-size:18px;">{bias_kpi_label}</div>
             <div class="kpi-delta neutral" style="color:{bias_kpi_color};background:rgba(0,0,0,0.2);">{bull_count}B / {bear_count}B drivers</div>
         </div>
@@ -1397,6 +1629,43 @@ def main():
                     <span>Avg: ${r['avg']:,.2f}</span>
                     <span>ATR Expected: ${r['expected']:,.2f}</span>
                 </div>
+            </div>""", unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════════════
+    # MULTI-TIMEFRAME PROBABILITY
+    # ══════════════════════════════════════════════════
+    tt_mtf = tooltip("Probability", "Directional Probability")
+    st.markdown(f"""<div class="section-header" style="--section-accent: #a855f7;">
+        <span class="section-title">{tt_mtf}</span>
+        <span class="pill pill-model">DAILY / WEEKLY / MONTHLY</span>
+    </div>""", unsafe_allow_html=True)
+
+    prob_cols = st.columns(3)
+    for pcol, (tf_key, tf_label) in zip(prob_cols, [('daily', 'Daily (1-2D)'), ('weekly', 'Weekly (5D)'), ('monthly', 'Monthly (20D)')]):
+        p = mtf_probs[tf_key]
+        bull_pct = p['bullish']
+        bear_pct = p['bearish']
+        bias = p['bias']
+        rationale = p['rationale']
+        b_color = "#10b981" if bias == "BULLISH" else "#ef4444" if bias == "BEARISH" else "#f59e0b"
+        b_bg = f"rgba({16 if bias == 'BULLISH' else 239 if bias == 'BEARISH' else 245},{185 if bias == 'BULLISH' else 68 if bias == 'BEARISH' else 158},{129 if bias == 'BULLISH' else 68 if bias == 'BEARISH' else 11},0.12)"
+        with pcol:
+            st.markdown(f"""<div class="intel-card" style="padding:14px 16px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                    <span style="font-size:11px;font-weight:700;color:#a8b2c8;text-transform:uppercase;letter-spacing:0.5px;">{tf_label}</span>
+                    <span style="font-size:9px;font-weight:800;padding:3px 10px;border-radius:4px;background:{b_bg};color:{b_color};">{bias}</span>
+                </div>
+                <div class="prob-row">
+                    <span class="prob-label" style="color:#10b981;">Bull</span>
+                    <div class="prob-track"><div class="prob-fill" style="width:{bull_pct}%;background:linear-gradient(90deg,#10b981,#059669);"></div></div>
+                    <span class="prob-val" style="color:#10b981;">{bull_pct}%</span>
+                </div>
+                <div class="prob-row">
+                    <span class="prob-label" style="color:#ef4444;">Bear</span>
+                    <div class="prob-track"><div class="prob-fill" style="width:{bear_pct}%;background:linear-gradient(90deg,#ef4444,#dc2626);"></div></div>
+                    <span class="prob-val" style="color:#ef4444;">{bear_pct}%</span>
+                </div>
+                <div style="font-size:10px;color:#6b7a99;margin-top:6px;font-style:italic;">{rationale}</div>
             </div>""", unsafe_allow_html=True)
 
     # ══════════════════════════════════════════════════
@@ -1565,6 +1834,7 @@ def main():
 
             levels_html = ""
             if formatted.get('entry'):
+                tt_rr = tooltip("Risk/Reward", "Risk:Reward")
                 levels_html = f"""<div class="signal-levels">
                     <div class="signal-level-item">
                         <div class="signal-level-label">Entry</div>
@@ -1579,7 +1849,7 @@ def main():
                         <div class="signal-level-value" style="color:#10b981;">${signal['take_profit']:,.2f}</div>
                     </div>
                     <div class="signal-level-item">
-                        <div class="signal-level-label">Risk:Reward</div>
+                        <div class="signal-level-label">{tt_rr}</div>
                         <div class="signal-level-value" style="color:#f0b90b;">{formatted.get('rr', 'N/A')}</div>
                     </div>
                 </div>"""
@@ -1593,7 +1863,7 @@ def main():
                     </div>
                     <div class="signal-badge {direction}">{formatted['emoji']} {signal['direction']}</div>
                     <span class="signal-conf {conf_class}">{conf} confidence</span>
-                    <div style="font-size:10px;color:#6b7a99;margin-top:4px;">{time_str} · {signal['timeframe']} · {signal['pattern_name']}</div>
+                    <div style="font-size:10px;color:#6b7a99;margin-top:4px;">{time_str} · {signal['timeframe']} · {signal.get('session', '')} · {signal['pattern_name']}</div>
                     <div class="signal-explanation">{formatted['explanation']}</div>
                     {levels_html}
                     <div class="signal-reasons">{reasons_html}</div>
@@ -1666,21 +1936,28 @@ def main():
 
     with col_drivers:
         # ── MACRO DRIVERS ──
-        st.markdown("""<div class="intel-card"><h3 style="margin-bottom:14px;">Macro Drivers
+        tt_macro = tooltip("Macro Drivers")
+        st.markdown(f"""<div class="intel-card"><h3 style="margin-bottom:14px;">{tt_macro}
             <span class="pill pill-data">AUTO-COMPUTED</span></h3>""", unsafe_allow_html=True)
+        # Map driver names to glossary terms for tooltips
+        _driver_tt_map = {"USD (DXY)": "DXY", "US 10Y Yield": "Yield", "VIX (Fear Index)": "VIX",
+                          "Gold Trend (SMA 20/50)": "SMA", "S&P 500": None, "Crude Oil": None}
         for d in drivers:
             name, detail, impact, why = d[0], d[1], d[2], d[3]
             tag_class = "tag-bull" if impact == "BULLISH" else "tag-bear" if impact == "BEARISH" else "tag-mixed"
             why_html = f'<br><small style="color:#8892ab;font-style:italic;">{why}</small>' if why else ''
             icon_html = get_instrument_icon(name)
+            tt_key = _driver_tt_map.get(name)
+            name_html = tooltip(tt_key, name) if tt_key else name
             st.markdown(f"""<div class="driver-row">
-                <span>{icon_html} {name}<br><small style="color:#6b7a99">{detail}</small>{why_html}</span>
+                <span>{icon_html} {name_html}<br><small style="color:#6b7a99">{detail}</small>{why_html}</span>
                 <span class="{tag_class}">{impact}</span>
             </div>""", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
         # ── CORRELATIONS ──
-        st.markdown("""<div class="intel-card"><h3>30D Correlations
+        tt_corr = tooltip("Correlation", "30D Correlations")
+        st.markdown(f"""<div class="intel-card"><h3>{tt_corr}
             <span class="pill pill-model">COMPUTED</span></h3>""", unsafe_allow_html=True)
         for name, val in correlations.items():
             color = "#10b981" if val > 0.3 else "#ef4444" if val < -0.3 else "#6b7a99"
@@ -1694,23 +1971,27 @@ def main():
 
     with col_data:
         # ── KEY LEVELS ──
-        st.markdown("""<div class="intel-card"><h3>Key Levels
+        tt_pivot = tooltip("Pivot", "Key Levels")
+        st.markdown(f"""<div class="intel-card"><h3>{tt_pivot}
             <span class="pill pill-data">PIVOT + S/R</span></h3>""", unsafe_allow_html=True)
         pcol1, pcol2 = st.columns(2)
         with pcol1:
-            st.markdown("<b style='color:#10b981;font-size:11px;'>Support</b>", unsafe_allow_html=True)
+            tt_sup = tooltip("Support")
+            st.markdown(f"<b style='color:#10b981;font-size:11px;'>{tt_sup}</b>", unsafe_allow_html=True)
             for label, val in [("Pivot S1", pivots['S1']), ("Pivot S2", pivots['S2']), ("Pivot S3", pivots['S3'])]:
                 st.markdown(f'<div class="level-row"><span style="color:#10b981;font-family:JetBrains Mono">${val:,.0f}</span><span style="font-size:9px;color:#6b7a99">{label}</span></div>', unsafe_allow_html=True)
             st.markdown(f'<div class="level-row"><span style="color:#10b981;font-family:JetBrains Mono">${gold_df["SMA_20"].iloc[-1]:,.0f}</span><span style="font-size:9px;color:#6b7a99">SMA 20</span></div>', unsafe_allow_html=True)
         with pcol2:
-            st.markdown("<b style='color:#ef4444;font-size:11px;'>Resistance</b>", unsafe_allow_html=True)
+            tt_res = tooltip("Resistance")
+            st.markdown(f"<b style='color:#ef4444;font-size:11px;'>{tt_res}</b>", unsafe_allow_html=True)
             for label, val in [("Pivot R1", pivots['R1']), ("Pivot R2", pivots['R2']), ("Pivot R3", pivots['R3'])]:
                 st.markdown(f'<div class="level-row"><span style="color:#ef4444;font-family:JetBrains Mono">${val:,.0f}</span><span style="font-size:9px;color:#6b7a99">{label}</span></div>', unsafe_allow_html=True)
             st.markdown(f'<div class="level-row"><span style="color:#ef4444;font-family:JetBrains Mono">${gold_df["BB_upper"].iloc[-1]:,.0f}</span><span style="font-size:9px;color:#6b7a99">BB Upper</span></div>', unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
         # ── PROBABILITY ──
-        st.markdown("""<div class="intel-card"><h3>30-Day Targets
+        tt_prob = tooltip("Probability", "30-Day Targets")
+        st.markdown(f"""<div class="intel-card"><h3>{tt_prob}
             <span class="pill pill-model">PROBABILITY</span></h3>""", unsafe_allow_html=True)
         st.markdown('<small style="color:#6b7a99">Based on ATR + historical volatility</small>', unsafe_allow_html=True)
         st.markdown("<b style='color:#10b981;font-size:10px;'>UPSIDE</b>", unsafe_allow_html=True)
@@ -1785,21 +2066,40 @@ def main():
 
     with news_col:
         st.markdown("""<div class="section-header" style="--section-accent: #ef4444;">
-            <span class="section-title">Breaking News &amp; Gold Catalysts</span>
-            <span class="pill pill-live">LIVE</span>
+            <span class="section-title">Live News Feed</span>
+            <span class="pill pill-live">RSS · AUTO-REFRESH</span>
         </div>""", unsafe_allow_html=True)
         if news:
+            # Instrument impact keyword mapping
+            _impact_rules = {
+                'XAU': (['gold', 'xau', 'bullion', 'precious metal', 'safe haven', 'gold price', 'gold demand'], 'rss-tag-xau'),
+                'USD': (['dollar', 'usd', 'dxy', 'fed', 'federal reserve', 'interest rate', 'rate hike', 'rate cut', 'fomc', 'powell', 'treasury'], 'rss-tag-usd'),
+                'OIL': (['oil', 'crude', 'opec', 'brent', 'wti', 'petroleum', 'energy'], 'rss-tag-oil'),
+                'BOND': (['bond', 'yield', 'treasury', '10-year', '10y', 'debt', 'sovereign'], 'rss-tag-bond'),
+                'GEO': (['war', 'attack', 'strike', 'nuclear', 'bomb', 'missile', 'invasion', 'crisis', 'emergency', 'sanctions', 'conflict', 'geopolitical', 'tariff', 'trade war'], 'rss-tag-geo'),
+                'SPX': (['stock', 's&p', 'nasdaq', 'dow', 'equity', 'wall street', 'rally', 'selloff', 'correction', 'bear market', 'bull market'], 'rss-tag-spx'),
+            }
             for article in news[:20]:
                 date_str = article['published'].strftime('%b %d, %H:%M') if article['published'] else ""
                 source = f" — {article['source']}" if article['source'] else ""
-                # Highlight geopolitical/breaking news
                 title_lower = article['title'].lower()
-                is_breaking = any(w in title_lower for w in ['war', 'attack', 'strike', 'nuclear', 'bomb', 'missile', 'invasion', 'crisis', 'emergency'])
-                prefix = '<span style="color:#ef4444;font-weight:700;">BREAKING </span>' if is_breaking else ''
+                # Detect instrument impacts
+                impact_tags_html = ""
+                is_breaking = False
+                for tag_label, (keywords, tag_class) in _impact_rules.items():
+                    if any(kw in title_lower for kw in keywords):
+                        impact_tags_html += f'<span class="rss-tag {tag_class}">{tag_label}</span>'
+                        if tag_label == 'GEO':
+                            is_breaking = True
+                breaking_class = ' rss-breaking' if is_breaking else ''
+                prefix = '<span style="color:#ef4444;font-weight:700;font-size:10px;">⚡ BREAKING </span>' if is_breaking else ''
                 safe_link = article['link'] if article['link'].startswith(('http://', 'https://')) else '#'
-                st.markdown(f"""<div style="padding:6px 0;border-bottom:1px solid #1e2745;font-size:12px;">
-                    {prefix}<a href="{safe_link}" target="_blank" rel="noopener noreferrer" style="color:#e8ecf4;text-decoration:none;">{article['title']}</a>
-                    <div style="font-size:9px;color:#6b7a99;margin-top:2px;">{date_str}{source}</div>
+                st.markdown(f"""<div class="rss-item{breaking_class}">
+                    <div class="rss-title">
+                        {prefix}<a href="{safe_link}" target="_blank" rel="noopener noreferrer">{article['title']}</a>
+                        <div class="rss-impact-tags">{impact_tags_html}</div>
+                        <div style="font-size:9px;color:#6b7a99;margin-top:2px;">{date_str}{source}</div>
+                    </div>
                 </div>""", unsafe_allow_html=True)
         else:
             st.markdown('<div style="color:#6b7a99;font-size:12px;padding:8px;">No news available. Check internet connection.</div>', unsafe_allow_html=True)

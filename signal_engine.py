@@ -313,6 +313,21 @@ def compute_volume_score(df, index):
     return 0
 
 
+def _get_session_label(bar_time):
+    """Classify a bar's time into a trading session."""
+    if not hasattr(bar_time, 'hour'):
+        return "Unknown"
+    h = bar_time.hour
+    if 7 <= h < 12:
+        return "London"
+    elif 12 <= h < 17:
+        return "London/NY"
+    elif 17 <= h < 21:
+        return "New York"
+    else:
+        return "Asia"
+
+
 def generate_signals(mtf_data, max_signals=10):
     """
     Main signal generation — cross-references all 3 layers.
@@ -364,6 +379,23 @@ def generate_signals(mtf_data, max_signals=10):
         bar_low = bar['Low']
         bar_high = bar['High']
         bar_time = entry_df.index[idx]
+
+        # ── SESSION FILTER ──
+        # Only consider signals during active gold trading sessions:
+        # London (07:00-16:00 UTC), New York (13:30-21:00 UTC)
+        # Combined active window: 07:00-21:00 UTC covers both sessions
+        if hasattr(bar_time, 'hour'):
+            bar_hour = bar_time.hour
+            if bar_hour < 7 or bar_hour >= 21:
+                continue  # Skip Asia session — low liquidity, unreliable patterns
+
+        # ── MINIMUM VOLUME FILTER ──
+        # Skip candles with below-average volume — patterns need conviction
+        bar_vol = bar.get('Volume', 0) if hasattr(bar, 'get') else bar['Volume'] if 'Volume' in entry_df.columns else 0
+        if bar_vol > 0 and idx > 20:
+            avg_vol = entry_df['Volume'].iloc[max(0, idx - 20):idx].mean()
+            if avg_vol > 0 and (bar_vol / avg_vol) < 0.5:
+                continue  # Skip very low volume bars — likely noise
 
         # Check if this pattern is near a S/R level
         for level in nearby_levels:
@@ -540,6 +572,7 @@ def generate_signals(mtf_data, max_signals=10):
                 'volume_confirmed': vol_score >= 15,
                 'reasons': reasons,
                 'timeframe': entry_tf_key,
+                'session': _get_session_label(bar_time),
             }
             signals.append(signal)
 
