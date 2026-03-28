@@ -1904,7 +1904,7 @@ def main():
             border:1px solid rgba(240,185,11,0.15);border-radius:10px;padding:16px 20px;margin-bottom:16px;">
             <div style="display:flex;justify-content:space-between;align-items:center;">
                 <div>
-                    <div style="font-size:14px;font-weight:700;color:#f0b90b;margin-bottom:4px;">Welcome to Thankara</div>
+                    <div style="font-size:14px;font-weight:700;color:#f0b90b;margin-bottom:4px;">Welcome to Gold Command</div>
                     <div style="font-size:11px;color:#8892ab;line-height:1.6;">
                         Your AI-powered gold market intelligence terminal. Start with the <b style="color:#f0b90b;">Daily Brief</b> below for a quick summary,
                         then explore <b style="color:#f0b90b;">Trade Signals</b> and <b style="color:#f0b90b;">Intelligence</b> tabs.

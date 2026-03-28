@@ -1,4 +1,4 @@
-THANKARA - XAU/USD Market Intelligence Terminal
+GOLD COMMAND - XAU/USD Market Intelligence Terminal
 ===================================================
 
 SETUP (on any new machine)
