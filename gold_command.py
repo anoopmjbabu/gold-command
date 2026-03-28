@@ -1896,10 +1896,14 @@ def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, 
         why = d[3] if len(d) > 3 else ""
         card_class = "bullish" if impact == "BULLISH" else "bearish" if impact == "BEARISH" else "neutral"
         chg_color = "#10b981" if impact == "BULLISH" else "#ef4444" if impact == "BEARISH" else "#5a6a8a"
-        # Show gold-specific impact label with arrow
-        gold_arrow = "↑" if impact == "BULLISH" else "↓" if impact == "BEARISH" else "→"
-        gold_label = f"Gold {gold_arrow}" if impact != "NEUTRAL" else "Neutral for Gold"
-        why_text = f'<div style="font-size:8px;color:#6b7a99;margin-top:2px;">{html_escape(why[:40])}</div>' if why else ""
+        # Show impact label: use the why-text as the label if available, else show directional arrow
+        if why:
+            gold_label = why[:45]
+            why_text = ""
+        else:
+            gold_arrow = "↑" if impact == "BULLISH" else "↓" if impact == "BEARISH" else "→"
+            gold_label = f"Gold {gold_arrow}"
+            why_text = ""
         driver_cards_html += (
             f'<div class="driver-card {card_class}">'
             f'<div class="dc-name">{name}</div>'
@@ -1974,17 +1978,17 @@ def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, 
         parts = []
         if skill_brief.get('outlook'):
             parts.append(f'<p style="margin-top:10px;"><span style="color:#f0b90b;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:0.8px;">Capt. Gold&rsquo;s Outlook</span><br>'
-                         f'<span style="color:#e2e8f0;">{html_escape(skill_brief["outlook"][:300])}</span></p>')
+                         f'<span style="color:#e2e8f0;">{html_escape(skill_brief["outlook"])}</span></p>')
         if skill_brief.get('watching'):
             parts.append(f'<p><span style="color:#f0b90b;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:0.8px;">Today I&rsquo;m Watching</span><br>'
-                         f'<span style="color:#e2e8f0;">{html_escape(skill_brief["watching"][:200])}</span></p>')
+                         f'<span style="color:#e2e8f0;">{html_escape(skill_brief["watching"])}</span></p>')
         if skill_brief.get('trade_context'):
             parts.append(f'<p><span style="color:#f0b90b;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:0.8px;">Trade Context</span><br>'
-                         f'<span style="color:#e2e8f0;">{html_escape(skill_brief["trade_context"][:250])}</span></p>')
+                         f'<span style="color:#e2e8f0;">{html_escape(skill_brief["trade_context"])}</span></p>')
         if skill_brief.get('platform_signal'):
             parts.append(f'<p style="background:rgba(240,185,11,0.06);border-radius:6px;padding:8px 12px;border-left:2px solid #f0b90b;">'
                          f'<span style="font-size:9px;font-weight:700;color:#f0b90b;">PLATFORM SIGNAL</span><br>'
-                         f'<span style="font-size:11px;color:#a8b2c8;">{html_escape(skill_brief["platform_signal"][:150])}</span></p>')
+                         f'<span style="font-size:11px;color:#a8b2c8;">{html_escape(skill_brief["platform_signal"])}</span></p>')
         if parts:
             skill_section = ''.join(parts)
             skill_section += '<div style="font-size:8px;color:#3d4b6b;margin-top:6px;text-align:right;">Analysis: Gold Intel Daily Brief</div>'
