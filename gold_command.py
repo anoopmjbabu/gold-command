@@ -801,119 +801,124 @@ def fetch_correlated_data(period="3mo"):
     return data
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=3600)
 def fetch_economic_calendar():
-    """Fetch upcoming and recent economic events that impact gold from Google News RSS.
-    Improved parsing to extract actual event data + detect released vs upcoming events.
-    Returns list of dicts with structured event data including event_name, date, time_utc,
-    actual, forecast, previous, impact (HIGH/MEDIUM/LOW), currency, and gold_impact_direction."""
-    # Key economic terms that move gold
-    cal_feeds = [
-        "https://news.google.com/rss/search?q=NFP+jobs+report+OR+non+farm+payrolls&hl=en-US&gl=US&ceid=US:en&when=7d",
-        "https://news.google.com/rss/search?q=CPI+inflation+data+OR+consumer+price+index&hl=en-US&gl=US&ceid=US:en&when=7d",
-        "https://news.google.com/rss/search?q=FOMC+decision+OR+Fed+rate+decision+OR+Fed+minutes&hl=en-US&gl=US&ceid=US:en&when=7d",
-        "https://news.google.com/rss/search?q=PMI+manufacturing+OR+ISM+services&hl=en-US&gl=US&ceid=US:en&when=7d",
-        "https://news.google.com/rss/search?q=jobless+claims+OR+unemployment+rate&hl=en-US&gl=US&ceid=US:en&when=7d",
-        "https://news.google.com/rss/search?q=GDP+data+OR+retail+sales+data&hl=en-US&gl=US&ceid=US:en&when=7d",
-        "https://news.google.com/rss/search?q=PCE+inflation+OR+core+PCE&hl=en-US&gl=US&ceid=US:en&when=7d",
-    ]
+    """Fetch this week's economic calendar from ForexFactory (no API key needed).
+    Primary source: ForexFactory JSON endpoint (real scheduled events with dates/times).
+    Returns list of dicts: event_name, date, time_utc, actual, forecast, previous,
+    impact (HIGH/MEDIUM/LOW), currency, gold_impact_direction, released."""
 
-    # Impact classification rules
-    _high_impact = ['nfp', 'non-farm', 'non farm', 'fomc', 'rate decision', 'cpi', 'inflation data',
-                    'pce', 'core pce', 'gdp', 'powell', 'fed chair']
-    _med_impact = ['pmi', 'ism', 'jobless claims', 'unemployment', 'retail sales', 'fed minutes',
-                   'consumer confidence', 'housing', 'durable goods']
-    _instrument_map = {
-        'XAU': ['gold', 'safe haven', 'bullion'],
-        'USD': ['dollar', 'dxy', 'fed', 'fomc', 'rate', 'inflation', 'cpi', 'pce', 'nfp', 'jobs',
-                'gdp', 'retail', 'claims', 'payroll', 'employment', 'unemployment', 'powell'],
-        'BOND': ['yield', 'treasury', 'bond', '10-year', '10y'],
-        'SPX': ['stocks', 'equity', 's&p', 'nasdaq', 'wall street'],
+    FF_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+
+    # Impact mapping from ForexFactory terminology
+    _ff_impact_map = {
+        'High': 'HIGH', 'Medium': 'MEDIUM', 'Low': 'LOW',
+        'Holiday': 'LOW', 'Non-Economic': 'LOW',
     }
 
-    events = []
-    seen_titles = set()
-    for feed_url in cal_feeds:
-        try:
-            feed = feedparser.parse(feed_url)
-            for entry in feed.entries[:10]:
-                title = entry.get('title', '')
-                if not title or title in seen_titles:
-                    continue
-                seen_titles.add(title)
-                title_lower = title.lower()
+    # Gold-relevant currencies (events in these currencies affect gold)
+    _gold_currencies = {'USD', 'EUR', 'GBP', 'JPY', 'CHF', 'AUD', 'CAD', 'CNY'}
 
-                # Parse date
-                pub_date = None
-                for date_field in ['published_parsed', 'updated_parsed']:
-                    parsed = entry.get(date_field)
-                    if parsed:
+    events = []
+
+    try:
+        resp = requests.get(FF_URL, timeout=10, headers={
+            'User-Agent': 'Mozilla/5.0 (compatible; GoldCommand/2.0)'
+        })
+        resp.raise_for_status()
+        ff_data = resp.json()
+
+        now_utc = datetime.utcnow()
+        today = now_utc.date()
+
+        for evt in ff_data:
+            try:
+                title = evt.get('title', '')
+                country = evt.get('country', '')
+                impact_raw = evt.get('impact', 'Low')
+                impact = _ff_impact_map.get(impact_raw, 'LOW')
+                forecast = evt.get('forecast', '')
+                previous = evt.get('previous', '')
+                actual = evt.get('actual', '') if evt.get('actual') else None
+
+                # Parse date — ForexFactory uses ISO format or similar
+                date_str = evt.get('date', '')
+                evt_date = None
+                evt_time = None
+                if date_str:
+                    try:
+                        dt = datetime.fromisoformat(date_str.replace('Z', '+00:00').split('+')[0])
+                        evt_date = dt.date()
+                        evt_time = dt.strftime('%H:%M UTC')
+                    except Exception:
                         try:
-                            pub_date = datetime(*parsed[:6]).date()
+                            dt = datetime.strptime(date_str[:19], '%Y-%m-%dT%H:%M:%S')
+                            evt_date = dt.date()
+                            evt_time = dt.strftime('%H:%M UTC')
                         except Exception:
                             pass
-                        break
-                if not pub_date:
+
+                if not evt_date:
                     continue
 
-                # Classify impact
-                impact = "LOW"
-                if any(kw in title_lower for kw in _high_impact):
-                    impact = "HIGH"
-                elif any(kw in title_lower for kw in _med_impact):
-                    impact = "MEDIUM"
+                # Only include events from today onward (or recent releases from past 2 days)
+                days_diff = (evt_date - today).days
+                if days_diff < -2 or days_diff > 7:
+                    continue
 
-                # Detect affected instruments
-                instruments = []
-                for instr, keywords in _instrument_map.items():
-                    if any(kw in title_lower for kw in keywords):
-                        instruments.append(instr)
-                if not instruments:
-                    instruments = ['USD']  # Default for econ data
+                # Filter: only gold-relevant currencies
+                if country.upper() not in _gold_currencies and impact != 'HIGH':
+                    continue
 
-                # Try to parse actual/forecast/previous from headline
-                actual, forecast, previous = None, None, None
+                # Determine if released
+                released = actual is not None and actual != ''
+
+                # Gold impact direction for released events
                 gold_impact_direction = None
-
-                # Simple headline parsing for released events: "CPI comes in at 3.1% vs 2.9% expected"
-                import re
-                if ' at ' in title_lower and ' vs ' in title_lower and '%' in title_lower:
-                    # Event has been released with data
-                    match = re.search(r'at\s+([\d\.]+%?)\s+vs\s+([\d\.]+%?)', title_lower)
-                    if match:
-                        actual = match.group(1)
-                        forecast = match.group(2)
-                        # Simple gold impact logic: if inflation data released higher than expected, bearish for gold
-                        if any(k in title_lower for k in ['cpi', 'inflation', 'pce']):
-                            try:
-                                actual_val = float(actual.rstrip('%'))
-                                forecast_val = float(forecast.rstrip('%'))
-                                gold_impact_direction = "BEARISH" if actual_val > forecast_val else "BULLISH"
-                            except:
-                                pass
-
-                # Determine if event is upcoming or released
-                is_released = (datetime.utcnow().date() - pub_date).days <= 0 and ' at ' in title_lower
+                if released and forecast:
+                    try:
+                        act_val = float(re.sub(r'[^\d.\-]', '', str(actual)))
+                        fct_val = float(re.sub(r'[^\d.\-]', '', str(forecast)))
+                        title_lower = title.lower()
+                        # Inflation above forecast = hawkish = bearish gold
+                        if any(k in title_lower for k in ['cpi', 'pce', 'inflation', 'price index']):
+                            gold_impact_direction = "BEARISH" if act_val > fct_val else "BULLISH"
+                        # Jobs above forecast = hawkish = bearish gold
+                        elif any(k in title_lower for k in ['nonfarm', 'payroll', 'employment change', 'jobs']):
+                            gold_impact_direction = "BEARISH" if act_val > fct_val else "BULLISH"
+                        # Unemployment above forecast = dovish = bullish gold
+                        elif any(k in title_lower for k in ['unemployment', 'jobless']):
+                            gold_impact_direction = "BULLISH" if act_val > fct_val else "BEARISH"
+                    except Exception:
+                        pass
 
                 events.append({
-                    'date': pub_date,
+                    'date': evt_date,
                     'title': title,
-                    'event_name': title.split('—')[0].split('-')[0].strip()[:40],
-                    'time_utc': None,  # Not available from RSS
+                    'event_name': title[:50],
+                    'time_utc': evt_time,
                     'actual': actual,
-                    'forecast': forecast,
-                    'previous': previous,
+                    'forecast': forecast if forecast else None,
+                    'previous': previous if previous else None,
                     'impact': impact,
-                    'instruments': instruments,
-                    'currency': 'USD' if 'USD' in instruments else None,
+                    'instruments': ['USD'] if country.upper() == 'USD' else [country.upper()],
+                    'currency': country.upper(),
                     'gold_impact_direction': gold_impact_direction,
-                    'released': is_released,
+                    'released': released,
                 })
-        except Exception as e:
-            logger.warning(f"Economic calendar fetch failed: {e}")
+            except Exception:
+                continue
 
-    # Deduplicate by date + similar title
-    events.sort(key=lambda x: (x['date'], x['impact'] != 'HIGH'), reverse=False)
+        logger.info(f"ForexFactory calendar: fetched {len(events)} events")
+
+    except Exception as e:
+        logger.warning(f"ForexFactory calendar fetch failed ({e}), using fallback")
+        # Fallback: no events rather than bad data from headlines
+        events = []
+
+    # Sort: today's events first, then by impact
+    _impact_order = {'HIGH': 0, 'MEDIUM': 1, 'LOW': 2}
+    events.sort(key=lambda x: (x['date'], _impact_order.get(x['impact'], 2)))
     return events
 
 
