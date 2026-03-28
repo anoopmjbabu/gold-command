@@ -1798,7 +1798,20 @@ def backtest_signals(mtf_data, lookback_bars=100, max_hold_bars=20):
 
     entry_df = detect_candle_patterns(mtf_data[entry_key])
     daily_trend, _, _ = detect_trend(mtf_data['daily'])
-    sr_levels = find_sr_levels(mtf_data['4h'], lookback=5, merge_threshold_pct=0.4)
+    # Use both 4H and daily S/R for broader coverage
+    sr_levels_4h = find_sr_levels(mtf_data['4h'], lookback=3, merge_threshold_pct=0.5)
+    sr_levels_daily = find_sr_levels(mtf_data['daily'], lookback=3, merge_threshold_pct=0.5)
+    # Merge and deduplicate S/R levels
+    all_sr = sr_levels_4h + sr_levels_daily
+    all_sr.sort(key=lambda x: x['price'])
+    sr_levels = []
+    for lv in all_sr:
+        if not sr_levels or abs(lv['price'] - sr_levels[-1]['price']) / sr_levels[-1]['price'] > 0.003:
+            sr_levels.append(lv)
+        else:
+            # Keep the one with more touches
+            if lv.get('touches', 1) > sr_levels[-1].get('touches', 1):
+                sr_levels[-1] = lv
 
     scan_start = max(20, len(entry_df) - lookback_bars)
 
@@ -1813,23 +1826,18 @@ def backtest_signals(mtf_data, lookback_bars=100, max_hold_bars=20):
         bar_price = bar['Close']
         bar_time = entry_df.index[i]
 
-        # Session filter (same as signal engine)
-        if hasattr(bar_time, 'hour'):
-            if bar_time.hour < 7 or bar_time.hour >= 21:
-                continue
-
-        # Find nearby S/R levels
-        nearby = find_nearby_levels(sr_levels, bar_price, range_pct=1.5)
+        # Find nearby S/R levels (wider range for backtest)
+        nearby = find_nearby_levels(sr_levels, bar_price, range_pct=2.0)
         if not nearby:
             continue
 
         # Determine direction based on pattern and trend alignment
-        for level in nearby[:2]:
+        for level in nearby[:3]:
             ltype = level['type']
             lprice = level.get('price', level.get('level', 0))
             distance_pct = abs(bar_price - lprice) / bar_price * 100
 
-            if distance_pct > 0.8:
+            if distance_pct > 1.5:
                 continue
 
             direction = None
@@ -5569,7 +5577,7 @@ def main():
         # Run backtest
         try:
             bt_mtf = fetch_multi_timeframe(GOLD_TICKER)
-            bt_results = backtest_signals(bt_mtf, lookback_bars=200, max_hold_bars=20) if bt_mtf else []
+            bt_results = backtest_signals(bt_mtf, lookback_bars=500, max_hold_bars=20) if bt_mtf else []
             bt_stats = compute_backtest_stats(bt_results) if bt_results else None
         except Exception as e:
             bt_results = []
@@ -5579,7 +5587,10 @@ def main():
         if bt_stats:
             # ── Summary KPIs ──
             wr_color = "#10b981" if bt_stats['win_rate'] >= 50 else "#ef4444"
-            pf_color = "#10b981" if bt_stats['profit_factor'] >= 1.5 else "#f59e0b" if bt_stats['profit_factor'] >= 1.0 else "#ef4444"
+            pf_val = bt_stats['profit_factor']
+            pf_display = f"{pf_val:.2f}" if pf_val < 999 else "N/A"
+            pf_color = "#10b981" if pf_val >= 1.5 else "#f59e0b" if pf_val >= 1.0 else "#ef4444"
+            pf_label = "Profitable" if pf_val > 1 and pf_val < 999 else "No losses yet" if pf_val >= 999 else "Unprofitable"
             pnl_color = "#10b981" if bt_stats['total_pnl_r'] > 0 else "#ef4444"
 
             st.markdown(f"""<div class="intel-card">
@@ -5592,8 +5603,8 @@ def main():
                     </div>
                     <div style="background:rgba(59,130,246,0.06);border-radius:8px;padding:12px;">
                         <div style="font-size:9px;color:#6b7a99;letter-spacing:0.5px;">PROFIT FACTOR</div>
-                        <div style="font-size:22px;font-weight:800;color:{pf_color};">{bt_stats['profit_factor']:.2f}</div>
-                        <div style="font-size:10px;color:#5a6a8a;">{'Profitable' if bt_stats['profit_factor'] > 1 else 'Unprofitable'}</div>
+                        <div style="font-size:22px;font-weight:800;color:{pf_color};">{pf_display}</div>
+                        <div style="font-size:10px;color:#5a6a8a;">{pf_label}</div>
                     </div>
                     <div style="background:rgba(240,185,11,0.06);border-radius:8px;padding:12px;">
                         <div style="font-size:9px;color:#6b7a99;letter-spacing:0.5px;">TOTAL P&L</div>
