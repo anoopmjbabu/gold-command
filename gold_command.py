@@ -1409,6 +1409,24 @@ def export_daily_brief_json(key_levels, pivots, ranges, drivers, trade_signals, 
     return brief_data
 
 
+def load_skill_brief():
+    """Load the gold-market-brief skill output if available and fresh (today's date)."""
+    try:
+        skill_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'skill_brief.json')
+        if not os.path.exists(skill_path):
+            return None
+        with open(skill_path, 'r') as f:
+            data = json.load(f)
+        # Only use if generated today
+        brief_date = data.get('date', '')
+        today = datetime.utcnow().strftime('%Y-%m-%d')
+        if brief_date != today:
+            return None
+        return data
+    except Exception:
+        return None
+
+
 def assess_macro_drivers(gold_df, corr_data):
     """Auto-assess macro drivers based on recent data movements.
     All drivers show: current value + 5D % change for consistency.
@@ -1769,6 +1787,40 @@ def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, 
         f'Resistance: <span class="highlight-down">${r1:,.0f}</span> / <span class="highlight-down">${r2:,.0f}</span>'
     )
 
+    # ── Check for skill-generated brief (richer analysis from gold-market-brief skill) ──
+    skill_brief = load_skill_brief()
+    skill_section = ""
+    if skill_brief:
+        # Override bias with skill's conviction-based bias
+        skill_bias = skill_brief.get('session_bias', '')
+        if skill_bias in ('BULLISH', 'BEARISH', 'NEUTRAL'):
+            bias = skill_bias
+            if skill_bias == 'BULLISH':
+                bias_color, bias_bg, bias_word = "#10b981", "rgba(16,185,129,0.12)", "bullish"
+            elif skill_bias == 'BEARISH':
+                bias_color, bias_bg, bias_word = "#ef4444", "rgba(239,68,68,0.12)", "bearish"
+            else:
+                bias_color, bias_bg, bias_word = "#f59e0b", "rgba(245,158,11,0.12)", "mixed"
+
+        # Add skill's richer context sections
+        parts = []
+        if skill_brief.get('outlook'):
+            parts.append(f'<p style="margin-top:10px;"><span style="color:#f0b90b;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:0.8px;">Capt. Gold&rsquo;s Outlook</span><br>'
+                         f'<span style="color:#e2e8f0;">{html_escape(skill_brief["outlook"][:300])}</span></p>')
+        if skill_brief.get('watching'):
+            parts.append(f'<p><span style="color:#f0b90b;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:0.8px;">Today I&rsquo;m Watching</span><br>'
+                         f'<span style="color:#e2e8f0;">{html_escape(skill_brief["watching"][:200])}</span></p>')
+        if skill_brief.get('trade_context'):
+            parts.append(f'<p><span style="color:#f0b90b;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:0.8px;">Trade Context</span><br>'
+                         f'<span style="color:#e2e8f0;">{html_escape(skill_brief["trade_context"][:250])}</span></p>')
+        if skill_brief.get('platform_signal'):
+            parts.append(f'<p style="background:rgba(240,185,11,0.06);border-radius:6px;padding:8px 12px;border-left:2px solid #f0b90b;">'
+                         f'<span style="font-size:9px;font-weight:700;color:#f0b90b;">PLATFORM SIGNAL</span><br>'
+                         f'<span style="font-size:11px;color:#a8b2c8;">{html_escape(skill_brief["platform_signal"][:150])}</span></p>')
+        if parts:
+            skill_section = ''.join(parts)
+            skill_section += '<div style="font-size:8px;color:#3d4b6b;margin-top:6px;text-align:right;">Analysis: Gold Intel Daily Brief</div>'
+
     # Compose the brief
     brief_html = (
         f'<p>Gold is trading at <b>${current:,.2f}</b>, '
@@ -1778,6 +1830,7 @@ def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, 
         f'<p style="margin-top:12px;">{rsi_text}. {range_text}</p>'
         f'<p>{sig_text}</p>'
         f'<p>{levels_text}</p>'
+        f'{skill_section}'
     )
 
     return brief_html, bias, bias_color, bias_bg
