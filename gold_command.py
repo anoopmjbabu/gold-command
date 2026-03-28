@@ -20,11 +20,9 @@ import time
 import sys
 import os
 
-# Add current directory to path for local imports
+# Add current directory to path for signal_engine import
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from signal_engine import fetch_multi_timeframe, generate_signals, format_signal_for_beginner
-from realtime_feed import get_realtime_price, get_active_session, CTraderFeed
-from data_fetcher import fetch_all_data_parallel, safe_section, get_section_errors, clear_section_errors
 
 import logging
 logging.basicConfig(level=logging.WARNING)
@@ -434,7 +432,7 @@ header {visibility: hidden;}
 }
 .daily-brief-header {
     display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 14px;
+    margin-bottom: 12px;
 }
 .daily-brief-title {
     font-size: 10px; font-weight: 800; color: #f0b90b;
@@ -452,169 +450,9 @@ header {visibility: hidden;}
     font-size: 10px; font-weight: 800; padding: 4px 14px; border-radius: 20px;
     letter-spacing: 0.8px; text-transform: uppercase;
 }
-/* ─── Brief Block Grid ─── */
-.brief-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    margin-top: 14px;
-}
-.brief-block {
-    background: rgba(255,255,255,0.02);
-    border: 1px solid rgba(255,255,255,0.04);
-    border-radius: 8px;
-    padding: 12px 14px;
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
-}
-.brief-block-icon {
-    font-size: 20px;
-    line-height: 1;
-    flex-shrink: 0;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 8px;
-}
-.brief-block-content {
-    flex: 1;
-}
-.brief-block-label {
-    font-size: 9px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    color: #5a6a8a;
-    margin-bottom: 3px;
-}
-.brief-block-value {
-    font-size: 13px;
-    font-weight: 600;
-    color: #e0e6f0;
-    line-height: 1.4;
-}
-.brief-block-value .up { color: #10b981; }
-.brief-block-value .down { color: #ef4444; }
-.brief-block-value .gold { color: #f0b90b; }
-.brief-block-value .neutral { color: #f59e0b; }
-.brief-block-value .muted { color: #6b7a99; font-size: 11px; font-weight: 400; }
-/* ─── Price hero row ─── */
-.brief-price-row {
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
-    margin-bottom: 6px;
-}
-.brief-price-main {
-    font-size: 28px;
-    font-weight: 900;
-    color: #f0b90b;
-    font-family: 'JetBrains Mono', monospace !important;
-    letter-spacing: -0.5px;
-}
-.brief-price-change {
-    font-size: 14px;
-    font-weight: 700;
-    padding: 3px 10px;
-    border-radius: 6px;
-}
-/* ─── Brief Macro Driver Chips ─── */
-.brief-drivers-row {
-    display: flex; flex-wrap: wrap; gap: 6px;
-    margin-bottom: 12px;
-}
-.brief-driver-chip {
-    display: flex; align-items: center; gap: 6px;
-    background: rgba(255,255,255,0.02);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 6px;
-    padding: 6px 10px;
-    font-size: 11px;
-}
-.brief-driver-chip .driver-name {
-    color: #a8b2c8; font-weight: 600;
-}
-.brief-driver-chip .driver-detail {
-    color: #6b7a99; font-size: 10px;
-}
-.brief-driver-chip .driver-tag {
-    font-size: 8px; font-weight: 800; padding: 1px 6px;
-    border-radius: 3px; letter-spacing: 0.5px;
-}
-/* ─── Brief Events Row ─── */
-.brief-events-row {
-    display: flex; flex-wrap: wrap; gap: 6px;
-    margin-bottom: 12px;
-    padding: 8px 10px;
-    background: rgba(239,68,68,0.04);
-    border: 1px solid rgba(239,68,68,0.08);
-    border-radius: 8px;
-}
-.brief-events-label {
-    font-size: 9px; font-weight: 800; color: #ef4444;
-    text-transform: uppercase; letter-spacing: 1px;
-    display: flex; align-items: center; gap: 4px;
-    width: 100%; margin-bottom: 2px;
-}
-.brief-event-chip {
-    display: inline-flex; align-items: center; gap: 4px;
-    font-size: 10px; padding: 3px 8px; border-radius: 4px;
-    font-weight: 600;
-}
-.brief-event-chip.high { background: rgba(239,68,68,0.1); color: #ef4444; border: 1px solid rgba(239,68,68,0.15); }
-.brief-event-chip.medium { background: rgba(245,158,11,0.1); color: #f59e0b; border: 1px solid rgba(245,158,11,0.15); }
-.brief-event-chip.low { background: rgba(107,122,153,0.08); color: #8892ab; border: 1px solid rgba(107,122,153,0.1); }
-/* ─── Brief Calendar Table ─── */
-.brief-cal-table {
-    width: 100%; border-collapse: collapse; margin-top: 6px;
-}
-.brief-cal-table th {
-    font-size: 8px; font-weight: 700; color: #5a6a8a; text-transform: uppercase;
-    letter-spacing: 0.8px; padding: 4px 8px; text-align: left;
-    border-bottom: 1px solid rgba(26,34,64,0.5);
-}
-.brief-cal-table td {
-    font-size: 11px; padding: 6px 8px; color: #c8d0e4;
-    border-bottom: 1px solid rgba(26,34,64,0.25);
-    font-family: 'JetBrains Mono', monospace;
-}
-.brief-cal-table tr:last-child td { border-bottom: none; }
-.cal-impact-dot {
-    display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 4px;
-}
-.cal-impact-dot.high { background: #ef4444; }
-.cal-impact-dot.medium { background: #f59e0b; }
-.cal-impact-dot.low { background: #6b7a99; }
-.cal-actual-beat { color: #10b981; font-weight: 700; }
-.cal-actual-miss { color: #ef4444; font-weight: 700; }
-.cal-actual-inline { color: #f0b90b; font-weight: 700; }
-.cal-pending { color: #5a6a8a; font-style: italic; }
-.cal-instrument-chip {
-    font-size: 8px; padding: 1px 5px; border-radius: 3px; font-weight: 700;
-    display: inline-flex; align-items: center; gap: 2px; margin-right: 2px;
-}
-.cal-instrument-chip.bullish { background: rgba(16,185,129,0.1); color: #10b981; }
-.cal-instrument-chip.bearish { background: rgba(239,68,68,0.1); color: #ef4444; }
-.cal-instrument-chip.mixed { background: rgba(245,158,11,0.1); color: #f59e0b; }
-/* ─── Brief Trend Summary ─── */
-.brief-trend-line {
-    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-    font-size: 11px;
-    color: #8892ab;
-    margin-bottom: 12px;
-}
-.brief-trend-badge {
-    font-size: 10px; font-weight: 800; padding: 3px 10px;
-    border-radius: 5px; letter-spacing: 0.5px;
-}
-.brief-trend-line b { color: #c8d0e4 !important; }
 @media (max-width: 768px) {
     .daily-brief { padding: 14px 16px; }
-    .brief-grid { grid-template-columns: 1fr; }
-    .brief-price-main { font-size: 22px; }
+    .daily-brief-body { font-size: 12px; line-height: 1.7; }
 }
 
 /* ═══ Divider ═══ */
@@ -676,55 +514,16 @@ header {visibility: hidden;}
     border: 1px solid #1a2240; border-radius: 10px;
     padding: 12px 16px; margin-bottom: 10px;
 }
-/* ─── News Impact Sections ─── */
-.news-impact-section {
-    margin-bottom: 14px;
-}
-.news-impact-header {
-    display: flex; align-items: center; gap: 8px;
-    padding: 6px 12px; border-radius: 6px;
-    margin-bottom: 6px; font-size: 10px; font-weight: 800;
-    letter-spacing: 0.8px; text-transform: uppercase;
-}
-.news-impact-header.high {
-    background: rgba(239,68,68,0.08); color: #ef4444;
-    border-left: 3px solid #ef4444;
-}
-.news-impact-header.medium {
-    background: rgba(245,158,11,0.08); color: #f59e0b;
-    border-left: 3px solid #f59e0b;
-}
-.news-impact-header.low {
-    background: rgba(107,122,153,0.06); color: #6b7a99;
-    border-left: 3px solid #3d4b6b;
-}
 .rss-item {
-    padding: 10px 12px;
-    border-bottom: 1px solid rgba(26,34,64,0.3);
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding: 8px 0; border-bottom: 1px solid rgba(26,34,64,0.5);
     font-size: 12px;
 }
 .rss-item:last-child { border-bottom: none; }
-.rss-item-title {
-    color: #c8d0e4; line-height: 1.5; font-size: 12px;
-    word-wrap: break-word; overflow-wrap: break-word;
-}
-.rss-item-title a { color: #c8d0e4; text-decoration: none; }
-.rss-item-title a:hover { color: #f0b90b; }
-.rss-item-meta {
-    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-    margin-top: 5px;
-}
-.rss-chip {
-    font-size: 9px; padding: 2px 7px; border-radius: 4px;
-    font-weight: 700; display: inline-flex; align-items: center; gap: 3px;
-    white-space: nowrap;
-}
-.rss-date { font-size: 9px; color: #5a6a8a; }
-.rss-breaking-bar {
-    border-left: 3px solid #ef4444;
-    background: rgba(239,68,68,0.04);
-    padding-left: 10px;
-}
+.rss-title { color: #c8d0e4; flex: 1; line-height: 1.4; }
+.rss-title a { color: #c8d0e4; text-decoration: none; }
+.rss-title a:hover { color: #f0b90b; }
+.rss-impact-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
 .rss-tag {
     font-size: 8px; font-weight: 700; padding: 2px 6px; border-radius: 3px;
     text-transform: uppercase; letter-spacing: 0.5px;
@@ -862,123 +661,9 @@ def fetch_correlated_data(period="3mo"):
 
 @st.cache_data(ttl=1800)
 def fetch_economic_calendar():
-    """Fetch economic calendar from FinnHub (free API) with actual/forecast/previous.
-    Falls back to RSS-based approach if API key not available.
-    Returns list of dicts with structured event data."""
-
-    # ── Impact + instrument mapping for known event types ──
-    _event_impact_map = {
-        # HIGH IMPACT events
-        'nonfarm payrolls': {'impact': 'HIGH', 'instruments': {'Gold': 'inverse', 'DXY': 'direct', 'US 10Y': 'direct', 'S&P 500': 'mixed'}},
-        'cpi': {'impact': 'HIGH', 'instruments': {'Gold': 'direct', 'DXY': 'inverse', 'US 10Y': 'direct'}},
-        'core cpi': {'impact': 'HIGH', 'instruments': {'Gold': 'direct', 'DXY': 'inverse', 'US 10Y': 'direct'}},
-        'interest rate decision': {'impact': 'HIGH', 'instruments': {'Gold': 'inverse', 'DXY': 'direct', 'US 10Y': 'direct', 'S&P 500': 'inverse'}},
-        'fomc': {'impact': 'HIGH', 'instruments': {'Gold': 'inverse', 'DXY': 'direct', 'US 10Y': 'direct'}},
-        'pce price index': {'impact': 'HIGH', 'instruments': {'Gold': 'direct', 'DXY': 'inverse'}},
-        'core pce': {'impact': 'HIGH', 'instruments': {'Gold': 'direct', 'DXY': 'inverse'}},
-        'gdp': {'impact': 'HIGH', 'instruments': {'Gold': 'inverse', 'DXY': 'direct', 'S&P 500': 'direct'}},
-        'unemployment rate': {'impact': 'HIGH', 'instruments': {'Gold': 'direct', 'DXY': 'inverse'}},
-        # MEDIUM IMPACT events
-        'pmi': {'impact': 'MEDIUM', 'instruments': {'Gold': 'inverse', 'DXY': 'direct'}},
-        'ism manufacturing': {'impact': 'MEDIUM', 'instruments': {'Gold': 'inverse', 'DXY': 'direct', 'S&P 500': 'direct'}},
-        'ism services': {'impact': 'MEDIUM', 'instruments': {'Gold': 'inverse', 'DXY': 'direct'}},
-        'initial jobless claims': {'impact': 'MEDIUM', 'instruments': {'Gold': 'direct', 'DXY': 'inverse'}},
-        'retail sales': {'impact': 'MEDIUM', 'instruments': {'Gold': 'inverse', 'DXY': 'direct', 'S&P 500': 'direct'}},
-        'consumer confidence': {'impact': 'MEDIUM', 'instruments': {'Gold': 'inverse', 'S&P 500': 'direct'}},
-        'durable goods': {'impact': 'MEDIUM', 'instruments': {'Gold': 'inverse', 'DXY': 'direct'}},
-        'housing starts': {'impact': 'LOW', 'instruments': {'DXY': 'direct'}},
-        'existing home sales': {'impact': 'LOW', 'instruments': {'DXY': 'direct'}},
-        'trade balance': {'impact': 'LOW', 'instruments': {'DXY': 'direct'}},
-    }
-
-    def _classify_event(event_name):
-        """Match event name to impact/instrument data."""
-        name_lower = event_name.lower()
-        for key, data in _event_impact_map.items():
-            if key in name_lower:
-                return data
-        # Default fallback
-        return {'impact': 'LOW', 'instruments': {'DXY': 'mixed'}}
-
-    # ── Try FinnHub API first (check Streamlit secrets, then env var) ──
-    finnhub_key = ''
-    try:
-        finnhub_key = st.secrets.get('FINNHUB_API_KEY', '')
-    except Exception:
-        pass
-    if not finnhub_key:
-        finnhub_key = os.environ.get('FINNHUB_API_KEY', '')
-    logger.info(f"FinnHub key found: {'YES (' + finnhub_key[:6] + '...)' if finnhub_key else 'NO'}")
-    if finnhub_key:
-        try:
-            today = datetime.utcnow().date()
-            from_date = (today - timedelta(days=3)).strftime('%Y-%m-%d')
-            to_date = (today + timedelta(days=7)).strftime('%Y-%m-%d')
-            url = f"https://finnhub.io/api/v1/calendar/economic?from={from_date}&to={to_date}&token={finnhub_key}"
-            resp = requests.get(url, timeout=10)
-            logger.info(f"FinnHub response status: {resp.status_code}")
-            if resp.status_code == 200:
-                data = resp.json()
-                logger.info(f"FinnHub response keys: {list(data.keys())}")
-
-                # FinnHub wraps events in 'economicCalendar' → 'result' (nested dict)
-                raw_events = data.get('economicCalendar', data.get('result', []))
-                if isinstance(raw_events, dict):
-                    raw_events = raw_events.get('result', [])
-                # Also handle case where top-level is a list
-                if isinstance(data, list):
-                    raw_events = data
-
-                logger.info(f"FinnHub raw events count: {len(raw_events) if isinstance(raw_events, list) else type(raw_events).__name__}")
-
-                events = []
-                for item in (raw_events if isinstance(raw_events, list) else []):
-                    # FinnHub uses 'country' field — filter to US only
-                    country = item.get('country', '') or ''
-                    if country.upper() not in ('US', 'USA', 'UNITED STATES'):
-                        continue
-                    event_name = item.get('event', '') or item.get('name', '') or ''
-                    if not event_name:
-                        continue
-                    classification = _classify_event(event_name)
-
-                    # Handle various date field formats from FinnHub
-                    date_val = item.get('time', '') or item.get('date', '') or ''
-                    event_date = str(date_val)[:10] if date_val else ''
-                    event_time = ''
-                    if isinstance(date_val, str) and 'T' in date_val:
-                        event_time = date_val[11:16]
-
-                    events.append({
-                        'date': event_date,
-                        'time': event_time,
-                        'title': event_name,
-                        'impact': classification['impact'],
-                        'instruments': classification['instruments'],
-                        'actual': item.get('actual', item.get('actualRelease')),
-                        'forecast': item.get('estimate', item.get('forecast')),
-                        'previous': item.get('prev', item.get('previous')),
-                        'unit': item.get('unit', ''),
-                        'source': 'FinnHub',
-                    })
-                events.sort(key=lambda x: (x['date'], x['impact'] != 'HIGH'))
-                logger.info(f"FinnHub parsed {len(events)} US economic events")
-                if events:
-                    return events
-            elif resp.status_code == 401:
-                logger.warning("FinnHub API key is invalid or expired (401)")
-            elif resp.status_code == 429:
-                logger.warning("FinnHub rate limit hit (429)")
-            else:
-                logger.warning(f"FinnHub unexpected status: {resp.status_code}")
-        except requests.exceptions.Timeout:
-            logger.warning("FinnHub request timed out after 10s")
-        except requests.exceptions.ConnectionError:
-            logger.warning("FinnHub connection failed — network issue")
-        except Exception as e:
-            logger.warning(f"FinnHub calendar fetch failed: {type(e).__name__}: {e}")
-
-    # ── Fallback: RSS-based approach ──
+    """Fetch upcoming and recent economic events that impact gold from Google News RSS.
+    Returns list of dicts: [{date, title, impact, instruments}]"""
+    # Key economic terms that move gold
     cal_feeds = [
         "https://news.google.com/rss/search?q=NFP+jobs+report+OR+non+farm+payrolls&hl=en-US&gl=US&ceid=US:en&when=7d",
         "https://news.google.com/rss/search?q=CPI+inflation+data+OR+consumer+price+index&hl=en-US&gl=US&ceid=US:en&when=7d",
@@ -988,6 +673,19 @@ def fetch_economic_calendar():
         "https://news.google.com/rss/search?q=GDP+data+OR+retail+sales+data&hl=en-US&gl=US&ceid=US:en&when=7d",
         "https://news.google.com/rss/search?q=PCE+inflation+OR+core+PCE&hl=en-US&gl=US&ceid=US:en&when=7d",
     ]
+
+    # Impact classification rules
+    _high_impact = ['nfp', 'non-farm', 'non farm', 'fomc', 'rate decision', 'cpi', 'inflation data',
+                    'pce', 'core pce', 'gdp', 'powell', 'fed chair']
+    _med_impact = ['pmi', 'ism', 'jobless claims', 'unemployment', 'retail sales', 'fed minutes',
+                   'consumer confidence', 'housing', 'durable goods']
+    _instrument_map = {
+        'XAU': ['gold', 'safe haven', 'bullion'],
+        'USD': ['dollar', 'dxy', 'fed', 'fomc', 'rate', 'inflation', 'cpi', 'pce', 'nfp', 'jobs',
+                'gdp', 'retail', 'claims', 'payroll', 'employment', 'unemployment', 'powell'],
+        'BOND': ['yield', 'treasury', 'bond', '10-year', '10y'],
+        'SPX': ['stocks', 'equity', 's&p', 'nasdaq', 'wall street'],
+    }
 
     events = []
     seen_titles = set()
@@ -1001,6 +699,7 @@ def fetch_economic_calendar():
                 seen_titles.add(title)
                 title_lower = title.lower()
 
+                # Parse date
                 pub_date = None
                 for date_field in ['published_parsed', 'updated_parsed']:
                     parsed = entry.get(date_field)
@@ -1013,24 +712,32 @@ def fetch_economic_calendar():
                 if not pub_date:
                     continue
 
-                classification = _classify_event(title)
+                # Classify impact
+                impact = "LOW"
+                if any(kw in title_lower for kw in _high_impact):
+                    impact = "HIGH"
+                elif any(kw in title_lower for kw in _med_impact):
+                    impact = "MEDIUM"
+
+                # Detect affected instruments
+                instruments = []
+                for instr, keywords in _instrument_map.items():
+                    if any(kw in title_lower for kw in keywords):
+                        instruments.append(instr)
+                if not instruments:
+                    instruments = ['USD']  # Default for econ data
 
                 events.append({
-                    'date': str(pub_date),
-                    'time': '',
+                    'date': pub_date,
                     'title': title,
-                    'impact': classification['impact'],
-                    'instruments': classification['instruments'],
-                    'actual': None,
-                    'forecast': None,
-                    'previous': None,
-                    'unit': '',
-                    'source': 'RSS',
+                    'impact': impact,
+                    'instruments': instruments,
                 })
         except Exception as e:
-            logger.warning(f"Economic calendar RSS fetch failed: {e}")
+            logger.warning(f"Economic calendar fetch failed: {e}")
 
-    events.sort(key=lambda x: (x['date'], x['impact'] != 'HIGH'))
+    # Deduplicate by date + similar title
+    events.sort(key=lambda x: (x['date'], x['impact'] != 'HIGH'), reverse=False)
     return events
 
 
@@ -1122,16 +829,12 @@ def compute_indicators(df):
 
     # RSI (Wilder's smoothing — matches TradingView/MT4)
     delta = df['Close'].diff()
-    gain = delta.where(delta > 0, 0.0)
-    loss = (-delta.where(delta < 0, 0.0))
+    gain = delta.where(delta > 0, 0)
+    loss = (-delta.where(delta < 0, 0))
     avg_gain = gain.ewm(alpha=1.0/14, min_periods=14, adjust=False).mean()
     avg_loss = loss.ewm(alpha=1.0/14, min_periods=14, adjust=False).mean()
-    # Safe division: use numpy to avoid pandas .replace() issues on 3.14
-    avg_loss_vals = avg_loss.values.ravel().copy().astype(np.float64)
-    avg_loss_vals[avg_loss_vals == 0] = np.nan
-    rs = avg_gain.values.ravel().astype(np.float64) / avg_loss_vals
-    rsi_arr = np.nan_to_num(100.0 - (100.0 / (1.0 + rs)), nan=50.0)
-    df['RSI'] = pd.array(rsi_arr.ravel(), dtype='float64')
+    rs = avg_gain / avg_loss.replace(0, np.nan)  # Prevent division by zero
+    df['RSI'] = (100 - (100 / (1 + rs))).fillna(50)  # Default to 50 if NaN
 
     # MACD
     df['MACD'] = df['EMA_12'] - df['EMA_26']
@@ -1145,30 +848,9 @@ def compute_indicators(df):
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     df['ATR_14'] = tr.rolling(14).mean()
 
-    # Volume analysis — handle NaN/zero volume (common with futures data)
-    # Convert to Python list first, then flat numpy — avoids ALL pandas dtype issues
-    try:
-        vol_list = df['Volume'].tolist()
-        vol_arr = np.array([float(v) if v is not None else 0.0 for v in vol_list], dtype=np.float64)
-        vol_arr = np.nan_to_num(vol_arr, nan=0.0).ravel()
-    except Exception:
-        vol_arr = np.zeros(len(df), dtype=np.float64)
-    df['Volume'] = pd.array(vol_arr, dtype='float64')
-
-    # Rolling 20-day volume average (manual numpy to avoid pandas issues)
-    n = len(vol_arr)
-    vol_sma_arr = np.full(n, np.nan, dtype=np.float64)
-    for i in range(19, n):
-        vol_sma_arr[i] = np.mean(vol_arr[i-19:i+1])
-
-    # Volume ratio — safe division, all as flat 1D float64 arrays
-    vol_ratio_arr = np.zeros(n, dtype=np.float64)
-    for i in range(n):
-        if not np.isnan(vol_sma_arr[i]) and vol_sma_arr[i] > 0:
-            vol_ratio_arr[i] = vol_arr[i] / vol_sma_arr[i]
-
-    df['Vol_SMA_20'] = pd.array(vol_sma_arr, dtype='Float64')
-    df['Vol_ratio'] = pd.array(vol_ratio_arr, dtype='float64')
+    # Volume analysis
+    df['Vol_SMA_20'] = df['Volume'].rolling(20).mean()
+    df['Vol_ratio'] = df['Volume'] / df['Vol_SMA_20']
 
     return df
 
@@ -1364,7 +1046,7 @@ def compute_multi_tf_probability(df):
     # ── Daily probability (next 1-2 days) ──
     sma_5 = df['Close'].tail(5).mean()
     sma_20 = df['SMA_20'].iloc[-1] if 'SMA_20' in df.columns else df['Close'].tail(20).mean()
-    rsi = df['RSI'].iloc[-1] if 'RSI' in df.columns else 50
+    rsi = df['RSI_14'].iloc[-1] if 'RSI_14' in df.columns else 50
     daily_bull = 50
     rationale_parts = []
     if current > sma_5:
@@ -1784,13 +1466,11 @@ def get_instrument_icon(name):
     return icons.get(name, icons.get(_aliases.get(name, ''), ''))
 
 
-def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, trade_signals, signal_trend, ranges, pivots, key_levels, econ_events=None):
-    """Generate a structured daily brief with visual blocks for the dashboard."""
+def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, trade_signals, signal_trend, ranges, pivots, key_levels):
+    """Generate a plain-English daily brief summary for the top of the dashboard."""
     # Direction
-    is_up = daily_chg >= 0
-    chg_color = "#10b981" if is_up else "#ef4444"
-    chg_bg = "rgba(16,185,129,0.1)" if is_up else "rgba(239,68,68,0.1)"
-    arrow = "&#9650;" if is_up else "&#9660;"
+    direction = "up" if daily_chg >= 0 else "down"
+    dir_class = "highlight-up" if daily_chg >= 0 else "highlight-down"
 
     # Session bias from drivers
     bull_count = sum(1 for d in drivers if d[2] == "BULLISH")
@@ -1799,218 +1479,67 @@ def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, 
         bias = "BULLISH"
         bias_color = "#10b981"
         bias_bg = "rgba(16,185,129,0.12)"
+        bias_word = "bullish"
     elif bear_count > bull_count + 1:
         bias = "BEARISH"
         bias_color = "#ef4444"
         bias_bg = "rgba(239,68,68,0.12)"
+        bias_word = "bearish"
     else:
         bias = "NEUTRAL"
         bias_color = "#f59e0b"
         bias_bg = "rgba(245,158,11,0.12)"
+        bias_word = "mixed"
 
-    # ── Macro Driver Chips (boxed) ──
-    drivers_chips_html = '<div class="brief-drivers-row">'
+    # Key driver (most impactful)
+    key_drivers_text = []
     for d in drivers:
         name, detail, impact = d[0], d[1], d[2]
-        if impact == "BULLISH":
-            tag_color, tag_bg, tag_label = "#10b981", "rgba(16,185,129,0.12)", "BULLISH"
-            border = "rgba(16,185,129,0.15)"
-        elif impact == "BEARISH":
-            tag_color, tag_bg, tag_label = "#ef4444", "rgba(239,68,68,0.12)", "BEARISH"
-            border = "rgba(239,68,68,0.15)"
-        else:
-            continue  # Skip neutral drivers
-        drivers_chips_html += (
-            f'<div class="brief-driver-chip" style="border-color:{border};">'
-            f'<div><span class="driver-name">{name}</span><br>'
-            f'<span class="driver-detail">{detail}</span></div>'
-            f'<span class="driver-tag" style="background:{tag_bg};color:{tag_color};">{tag_label}</span>'
-            f'</div>'
-        )
-    drivers_chips_html += '</div>'
+        if impact != "NEUTRAL":
+            key_drivers_text.append(f"{name} ({detail})")
+    top_drivers = ", ".join(key_drivers_text[:3]) if key_drivers_text else "no strong macro catalysts"
 
-    # ── Today's Key Events (calendar table with actual/forecast/previous) ──
-    events_html = ""
-    if econ_events:
-        today_str = datetime.utcnow().strftime('%Y-%m-%d')
-        # Today's events first, then upcoming
-        today_events = [e for e in econ_events if today_str in str(e.get('date', ''))]
-        upcoming_events = [e for e in econ_events if str(e.get('date', '')) > today_str]
-        display_events = today_events[:6] if today_events else upcoming_events[:5]
-        cal_label = "Key Events Today" if today_events else "Upcoming Events"
-
-        if display_events:
-            events_html = '<div class="brief-events-row" style="padding:10px 12px;">'
-            events_html += f'<div class="brief-events-label">&#128197; {cal_label}</div>'
-            events_html += '<table class="brief-cal-table"><thead><tr>'
-            events_html += '<th>Event</th><th>Actual</th><th>Forecast</th><th>Previous</th><th>Impact On</th>'
-            events_html += '</tr></thead><tbody>'
-
-            for evt in display_events:
-                impact_lvl = evt.get('impact', 'LOW').lower()
-                evt_title = evt.get('title', '')[:45]
-                evt_time = evt.get('time', '')
-
-                # Actual vs Forecast comparison
-                actual = evt.get('actual')
-                forecast = evt.get('forecast')
-                previous = evt.get('previous')
-                unit = evt.get('unit', '')
-
-                if actual is not None:
-                    # Determine beat/miss
-                    if forecast is not None:
-                        if actual > forecast:
-                            actual_class = "cal-actual-beat"
-                        elif actual < forecast:
-                            actual_class = "cal-actual-miss"
-                        else:
-                            actual_class = "cal-actual-inline"
-                    else:
-                        actual_class = "cal-actual-inline"
-                    actual_html = f'<span class="{actual_class}">{actual}{unit}</span>'
-                else:
-                    actual_html = '<span class="cal-pending">Pending</span>'
-
-                forecast_html = f'{forecast}{unit}' if forecast is not None else '—'
-                previous_html = f'{previous}{unit}' if previous is not None else '—'
-
-                # Instrument impact chips
-                instruments = evt.get('instruments', {})
-                instr_chips = ""
-                if isinstance(instruments, dict):
-                    for instr_name, direction in list(instruments.items())[:3]:
-                        chip_class = "bullish" if direction == "direct" else "bearish" if direction == "inverse" else "mixed"
-                        arrow = "&#9650;" if direction == "direct" else "&#9660;" if direction == "inverse" else "&#9654;"
-                        instr_chips += f'<span class="cal-instrument-chip {chip_class}">{instr_name} {arrow}</span>'
-                elif isinstance(instruments, list):
-                    for instr_name in instruments[:3]:
-                        instr_chips += f'<span class="cal-instrument-chip mixed">{instr_name}</span>'
-
-                time_str = f'<span style="color:#5a6a8a;font-size:9px;"> {evt_time}</span>' if evt_time else ''
-
-                events_html += (
-                    f'<tr>'
-                    f'<td style="font-family:Inter,sans-serif;"><span class="cal-impact-dot {impact_lvl}"></span>{evt_title}{time_str}</td>'
-                    f'<td>{actual_html}</td>'
-                    f'<td style="color:#8892ab;">{forecast_html}</td>'
-                    f'<td style="color:#6b7a99;">{previous_html}</td>'
-                    f'<td>{instr_chips}</td>'
-                    f'</tr>'
-                )
-
-            events_html += '</tbody></table></div>'
-
-    # ── RSI block ──
+    # RSI context
     if rsi < 30:
-        rsi_label, rsi_color, rsi_icon = "OVERSOLD", "#ef4444", "&#128315;"
-        rsi_note = "Bounce potential — watch for reversal patterns"
+        rsi_text = f'RSI at <span class="highlight-down">{rsi:.0f} (oversold)</span> — bounce potential'
     elif rsi > 70:
-        rsi_label, rsi_color, rsi_icon = "OVERBOUGHT", "#10b981", "&#128314;"
-        rsi_note = "Pullback risk — momentum stretched"
-    elif rsi < 40:
-        rsi_label, rsi_color, rsi_icon = "WEAK", "#f59e0b", "&#128201;"
-        rsi_note = "Below neutral — bears in control"
-    elif rsi > 60:
-        rsi_label, rsi_color, rsi_icon = "STRONG", "#10b981", "&#128200;"
-        rsi_note = "Above neutral — bulls in control"
+        rsi_text = f'RSI at <span class="highlight-up">{rsi:.0f} (overbought)</span> — pullback risk'
     else:
-        rsi_label, rsi_color, rsi_icon = "NEUTRAL", "#8892ab", "&#9878;"
-        rsi_note = "Balanced momentum — no edge"
+        rsi_text = f"RSI at {rsi:.0f} (neutral zone)"
 
-    # ── Range utilization block ──
+    # Range context
     daily_util = ranges['today']['util']
     if daily_util > 100:
-        range_icon, range_status, range_color = "&#128293;", "EXCEEDED", "#ef4444"
-        range_note = f"{daily_util:.0f}% of ATR used — extended"
+        range_text = f"Today's range has <b>exceeded</b> the ATR-expected move ({daily_util:.0f}% utilized) — extended conditions."
     elif daily_util > 70:
-        range_icon, range_status, range_color = "&#9889;", "NEAR LIMIT", "#f59e0b"
-        range_note = f"{daily_util:.0f}% of ATR used — nearing cap"
+        range_text = f"Today's range is nearing the expected daily move ({daily_util:.0f}% of ATR used)."
     else:
-        range_icon, range_status, range_color = "&#128202;", "ROOM TO RUN", "#10b981"
-        range_note = f"{daily_util:.0f}% of ATR used — expansion likely"
+        range_text = f"Today's range has room to expand ({daily_util:.0f}% of expected ATR used)."
 
-    # ── Signal block ──
+    # Signal summary
     if trade_signals:
         top_sig = trade_signals[0]
-        sig_dir = top_sig["direction"]
-        sig_icon = "&#128994;" if sig_dir == "LONG" else "&#128308;"
-        sig_color = "#10b981" if sig_dir == "LONG" else "#ef4444"
-        sig_value = f'{sig_dir} &middot; {top_sig["confidence"]} &middot; Score {top_sig["score"]}'
-        sig_note = f'{top_sig["pattern_name"]} at ${top_sig["level_price"]:,.0f}'
+        sig_text = (f'The signal engine has detected a <b>{top_sig["direction"]}</b> setup '
+                   f'({top_sig["confidence"]} confidence, score {top_sig["score"]}) '
+                   f'based on a {top_sig["pattern_name"]} at ${top_sig["level_price"]:,.2f}.')
     else:
-        sig_icon, sig_color = "&#128269;", "#6b7a99"
-        sig_value = "Scanning..."
-        sig_note = "No active setups — watching key levels"
+        sig_text = "No active trade signals right now — the engine is scanning for setups at key levels."
 
-    # ── Key levels ──
+    # Key levels to watch
     nearest_support = pivots['S1']
     nearest_resistance = pivots['R1']
+    levels_text = (f'Key levels: support at <span class="highlight-up">${nearest_support:,.0f}</span>, '
+                  f'resistance at <span class="highlight-down">${nearest_resistance:,.0f}</span> (Fibonacci pivots).')
 
-    # ── Trend label ──
-    trend_display = signal_trend.replace("_", " ").title()
-    trend_color = "#10b981" if "BULL" in signal_trend else "#ef4444" if "BEAR" in signal_trend else "#f59e0b"
-
-    # Compose structured brief HTML
+    # Compose the brief
     brief_html = (
-        # Price hero row
-        f'<div class="brief-price-row">'
-        f'<span class="brief-price-main">${current:,.2f}</span>'
-        f'<span class="brief-price-change" style="color:{chg_color};background:{chg_bg};">'
-        f'{arrow} ${abs(daily_chg):,.2f} ({daily_pct:+.2f}%)</span>'
-        f'</div>'
-        # Trend + bias badges
-        f'<div class="brief-trend-line">'
-        f'<span class="brief-trend-badge" style="background:{trend_color}15;color:{trend_color};border:1px solid {trend_color}25;">&#9654; {trend_display}</span>'
-        f'<span class="brief-trend-badge" style="background:{bias_bg};color:{bias_color};border:1px solid {bias_color}25;">Macro: {bias}</span>'
-        f'<span style="color:#5a6a8a;font-size:10px;">{bull_count} bullish · {bear_count} bearish drivers</span>'
-        f'</div>'
-        # Macro driver chips (boxed)
-        f'{drivers_chips_html}'
-        # Today's key events
-        f'{events_html}'
-        # 4-block grid
-        f'<div class="brief-grid">'
-        # Block 1: RSI
-        f'<div class="brief-block">'
-        f'<div class="brief-block-icon" style="background:rgba(107,122,153,0.08);">{rsi_icon}</div>'
-        f'<div class="brief-block-content">'
-        f'<div class="brief-block-label">RSI (14)</div>'
-        f'<div class="brief-block-value">'
-        f'<span style="color:{rsi_color};font-size:18px;font-weight:800;">{rsi:.0f}</span>'
-        f' <span class="muted">{rsi_label}</span></div>'
-        f'<div class="brief-block-value muted">{rsi_note}</div>'
-        f'</div></div>'
-        # Block 2: Range
-        f'<div class="brief-block">'
-        f'<div class="brief-block-icon" style="background:rgba(107,122,153,0.08);">{range_icon}</div>'
-        f'<div class="brief-block-content">'
-        f'<div class="brief-block-label">Daily Range</div>'
-        f'<div class="brief-block-value">'
-        f'<span style="color:{range_color};font-size:18px;font-weight:800;">{daily_util:.0f}%</span>'
-        f' <span class="muted">{range_status}</span></div>'
-        f'<div class="brief-block-value muted">{range_note}</div>'
-        f'</div></div>'
-        # Block 3: Signal
-        f'<div class="brief-block">'
-        f'<div class="brief-block-icon" style="background:rgba(107,122,153,0.08);">{sig_icon}</div>'
-        f'<div class="brief-block-content">'
-        f'<div class="brief-block-label">Signal Engine</div>'
-        f'<div class="brief-block-value"><span style="color:{sig_color};">{sig_value}</span></div>'
-        f'<div class="brief-block-value muted">{sig_note}</div>'
-        f'</div></div>'
-        # Block 4: Key Levels
-        f'<div class="brief-block">'
-        f'<div class="brief-block-icon" style="background:rgba(107,122,153,0.08);">&#127919;</div>'
-        f'<div class="brief-block-content">'
-        f'<div class="brief-block-label">Key Levels</div>'
-        f'<div class="brief-block-value">'
-        f'<span class="up">&#9650; ${nearest_resistance:,.0f}</span>'
-        f' &nbsp;&middot;&nbsp; '
-        f'<span class="down">&#9660; ${nearest_support:,.0f}</span></div>'
-        f'<div class="brief-block-value muted">Fibonacci pivot resistance &middot; support</div>'
-        f'</div></div>'
-        f'</div>'
+        f'<p>Gold is trading at <b>${current:,.2f}</b>, '
+        f'<span class="{dir_class}">{direction} ${abs(daily_chg):,.2f} ({daily_pct:+.2f}%)</span> on the session. '
+        f'The daily trend is <b>{signal_trend.replace("_", " ").lower()}</b> and macro conditions are <b>{bias_word}</b> — '
+        f'driven by {top_drivers}.</p>'
+        f'<p>{rsi_text}. {range_text}</p>'
+        f'<p>{sig_text}</p>'
+        f'<p>{levels_text}</p>'
     )
 
     return brief_html, bias, bias_color, bias_bg
@@ -2028,7 +1557,7 @@ def main():
             <span class="sub">XAU/USD Market Intelligence Terminal</span>
             <div style="font-size:9px;color:#5a6a8a;margin-top:3px;letter-spacing:0.5px;">Developed by <span style="color:#f0b90b;">Anoop B.</span></div>
         </div>
-        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <div style="display:flex; align-items:center; gap:16px;">
             <span class="live-badge"><span class="live-dot"></span>LIVE DATA</span>
             <span style="font-family:'JetBrains Mono'; font-size:11px; color:#6b7a99;">""" +
     datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC') + """</span>
@@ -2042,7 +1571,7 @@ def main():
         st.markdown("""<div style="text-align:center;padding:12px 0 16px;">
             <div style="font-size:18px;font-weight:900;color:#f0b90b;letter-spacing:2px;">GOLD COMMAND</div>
             <div style="font-size:9px;color:#5a6a8a;letter-spacing:1px;margin-top:2px;">XAU/USD Intelligence Terminal</div>
-            <div style="font-size:8px;color:#3d4b6b;margin-top:4px;">v2.2 · by Anoop B.</div>
+            <div style="font-size:8px;color:#3d4b6b;margin-top:4px;">v2.0 · by Anoop B.</div>
         </div>""", unsafe_allow_html=True)
 
         st.markdown('<div style="border-bottom:1px solid #1a2240;margin:8px 0;"></div>', unsafe_allow_html=True)
@@ -2120,28 +1649,29 @@ def main():
         st.markdown('<div style="border-bottom:1px solid #1a2240;margin:12px 0;"></div>', unsafe_allow_html=True)
 
         # ICMarkets Live Price Widget + Partner Banner
-        st.components.v1.html("""
-            <div style="text-align:center;background:#000;border-radius:10px;padding:10px 6px 8px;
-                border:1px solid rgba(59,130,246,0.15);">
-                <a href="https://icmarkets.com/?camp=87951" target="_blank">
-                    <img src="https://promo.icmarkets.com/Logos/2021/400x110/BAN_ICM_black_400x110.png"
-                         style="width:100%;max-width:240px;margin-bottom:8px;" alt="ICMarkets"/>
-                </a>
-                <iframe src="https://secure.icmarkets.com/Partner/Widget/PriceWidget/87951"
-                    width="100%" height="420" frameborder="0"
-                    style="border:none;border-radius:6px;max-width:273px;">
-                </iframe>
-                <div style="margin-top:6px;">
-                    <a href="https://icmarkets.com/?camp=87951" target="_blank"
-                       style="font-size:11px;color:#4ade80;text-decoration:none;font-weight:700;">
-                        Open Live Account →
-                    </a>
-                    <div style="font-size:8px;color:#666;margin-top:3px;">
-                        Raw spreads from 0.0 pips · ASIC regulated
-                    </div>
-                </div>
-            </div>
-        """, height=560)
+        st.markdown("""<div style="text-align:center;margin-bottom:6px;">
+            <a href="https://icmarkets.com/?camp=87951" target="_blank">
+                <img src="https://promo.icmarkets.com/Logos/2021/400x110/BAN_ICM_black_400x110.png"
+                     style="width:100%;max-width:260px;border-radius:6px;" alt="ICMarkets"/>
+            </a>
+        </div>""", unsafe_allow_html=True)
+
+        st.components.v1.iframe(
+            src="https://secure.icmarkets.com//Partner/Widget/PriceWidget/87951",
+            width=273,
+            height=480,
+            scrolling=False,
+        )
+
+        st.markdown("""<div style="text-align:center;margin-top:4px;">
+            <a href="https://icmarkets.com/?camp=87951" target="_blank"
+               style="font-size:9px;color:#60a5fa;text-decoration:none;font-weight:600;">
+                Open Live Account →
+            </a>
+            <span style="font-size:7px;color:#3d4b6b;display:block;margin-top:3px;">
+                Raw spreads from 0.0 pips · ASIC regulated
+            </span>
+        </div>""", unsafe_allow_html=True)
 
     # Auto-refresh trigger
     if auto_refresh:
@@ -2153,113 +1683,33 @@ def main():
             st.cache_data.clear()
             st.rerun()
 
-    # ── Fetch real-time spot price ──
-    rt_price = None
-    try:
-        goldapi_key = ''
-        metals_api_key = ''
-        try:
-            goldapi_key = st.secrets.get('GOLDAPI_KEY', '')
-        except Exception:
-            pass
-        try:
-            metals_api_key = st.secrets.get('METALS_API_KEY', '')
-        except Exception:
-            pass
-        if not goldapi_key:
-            goldapi_key = os.environ.get('GOLDAPI_KEY', '')
-        if not metals_api_key:
-            metals_api_key = os.environ.get('METALS_API_KEY', '')
-        rt_price = get_realtime_price(goldapi_key=goldapi_key or None, metals_api_key=metals_api_key or None)
-    except Exception as e:
-        logger.warning(f"Real-time price fetch failed: {e}")
-
-    # ── Get current session ──
-    session_info = get_active_session()
-
-    # ── Fetch all data in parallel ──
-    clear_section_errors()
+    # ── Fetch all data ──
     with st.spinner("Fetching market data..."):
-        parallel_result = fetch_all_data_parallel()
-        gold_df = parallel_result.get('gold_df')
-        corr_data = parallel_result.get('corr_data', {})
-        news = parallel_result.get('news', [])
-        fetch_errors = parallel_result.get('errors', [])
-        fetch_time_ms = parallel_result.get('fetch_time_ms', 0)
-
-        if gold_df is None:
-            gold_df = pd.DataFrame()
-
-        # Log performance
-        if fetch_time_ms:
-            logger.info(f"Parallel fetch completed in {fetch_time_ms}ms")
-
-    # ── Fallback: use original sequential fetch if parallel module fails ──
-    if gold_df.empty:
         try:
             gold_df = fetch_gold_data(period="6mo", interval="1d")
         except Exception as e:
             gold_df = pd.DataFrame()
-            logger.error(f"Fallback gold data fetch also failed: {e}")
-    if not corr_data:
+            logger.error(f"Unhandled error fetching gold data: {e}")
         try:
             corr_data = fetch_correlated_data(period="3mo")
         except Exception as e:
             corr_data = {}
-            logger.error(f"Fallback correlated data fetch failed: {e}")
-    if not news:
+            logger.error(f"Unhandled error fetching correlated data: {e}")
         try:
             news = fetch_gold_news()
         except Exception as e:
             news = []
-            logger.error(f"Fallback news fetch failed: {e}")
+            logger.error(f"Unhandled error fetching news: {e}")
 
     if gold_df.empty:
         st.error("⚠️ Market data temporarily unavailable — Yahoo Finance rate limit hit. This usually resolves in 1-2 minutes.")
         st.info("Click the **Rerun** button in the top-right corner or wait for auto-refresh.")
         return
 
-    # ── Show fetch performance + data source badges ──
-    data_source_label = "REAL-TIME" if (rt_price and rt_price.get('is_realtime')) else "DELAYED"
-    data_source_color = "#10b981" if data_source_label == "REAL-TIME" else "#f59e0b"
-    data_source_name = rt_price.get('source', 'yfinance') if rt_price else 'yfinance'
-    session_name = session_info.get('name', 'Unknown')
-    session_status = session_info.get('status', 'CLOSED')
-    session_color = session_info.get('color', '#5a6a8a')
-    session_detail = ""
-    if session_status == "ACTIVE":
-        closes_in = session_info.get('closes_in', 0)
-        if closes_in:
-            session_detail = f" · Closes in {closes_in}m"
-    elif session_status == "OPENING_SOON":
-        opens_in = session_info.get('opens_in', 0)
-        if opens_in:
-            session_detail = f" · Opens in {opens_in}m"
-
-    if fetch_errors:
-        err_text = f" · {len(fetch_errors)} warning{'s' if len(fetch_errors)>1 else ''}"
-    else:
-        err_text = ""
-    st.markdown(f"""<div style="display:flex;justify-content:center;gap:16px;padding:4px 0 6px;margin-bottom:4px;flex-wrap:wrap;">
-        <span style="font-size:9px;display:flex;align-items:center;gap:4px;">
-            <span style="width:6px;height:6px;border-radius:50%;background:{data_source_color};display:inline-block;"></span>
-            <span style="color:{data_source_color};font-weight:700;">{data_source_label}</span>
-            <span style="color:#5a6a8a;">via {data_source_name}</span>
-        </span>
-        <span style="font-size:9px;display:flex;align-items:center;gap:4px;">
-            <span style="width:6px;height:6px;border-radius:50%;background:{session_color};display:inline-block;"></span>
-            <span style="color:{session_color};font-weight:700;">{session_name}</span>
-            <span style="color:#5a6a8a;">{session_status}{session_detail}</span>
-        </span>
-        <span style="font-size:9px;color:#5a6a8a;">Fetched in {fetch_time_ms}ms{err_text}</span>
-    </div>""", unsafe_allow_html=True)
-
     # ── Compute everything ──
     gold_df = compute_indicators(gold_df)
     spikes = detect_volume_spikes(gold_df, threshold=1.5)
-    econ_events = parallel_result.get('econ_events', [])
-    if not econ_events:
-        econ_events = fetch_economic_calendar()
+    econ_events = fetch_economic_calendar()
     spikes_correlated = correlate_news_to_spikes(spikes, news, corr_data=corr_data, econ_events=econ_events)
     correlations = compute_correlations(gold_df, corr_data)
     multi_corr = compute_multi_window_correlations(gold_df, corr_data)
@@ -2270,16 +1720,10 @@ def main():
     drivers = assess_macro_drivers(gold_df, corr_data)
     beginner, intermediate, pro = generate_three_tier_analysis(gold_df, spikes_correlated, drivers)
 
-    # Use real-time price if available, otherwise fall back to yfinance close
-    if rt_price and rt_price.get('price'):
-        current = rt_price['price']
-        daily_chg = rt_price.get('change', 0) or (current - gold_df['Close'].iloc[-2])
-        daily_pct = rt_price.get('change_pct', 0) or ((daily_chg / gold_df['Close'].iloc[-2]) * 100)
-    else:
-        current = gold_df['Close'].iloc[-1]
-        prev = gold_df['Close'].iloc[-2]
-        daily_chg = current - prev
-        daily_pct = (daily_chg / prev) * 100
+    current = gold_df['Close'].iloc[-1]
+    prev = gold_df['Close'].iloc[-2]
+    daily_chg = current - prev
+    daily_pct = (daily_chg / prev) * 100
     high_52w = gold_df['High'].max()
     low_52w = gold_df['Low'].min()
 
@@ -2361,7 +1805,7 @@ def main():
     brief_text, brief_bias, brief_bias_color, brief_bias_bg = generate_daily_brief_text(
         current, daily_chg, daily_pct, rsi_val,
         gold_df['ATR_14'].iloc[-1], drivers, trade_signals,
-        signal_trend, ranges, pivots, key_levels, econ_events=econ_events
+        signal_trend, ranges, pivots, key_levels
     )
 
     brief_date = datetime.utcnow().strftime('%B %d, %Y')
@@ -3008,132 +2452,72 @@ def main():
                 <span class="pill pill-live">RSS · AUTO-REFRESH</span>
             </div>""", unsafe_allow_html=True)
             if news:
-                # Compute ACTUAL market moves ONCE for section-level display
-                _actual_moves = {}
-                if len(gold_df) >= 2:
-                    _actual_moves['Gold'] = ((gold_df['Close'].iloc[-1] / gold_df['Close'].iloc[-2]) - 1) * 100
-                for cname, cdf in corr_data.items():
-                    if len(cdf) >= 2:
-                        _actual_moves[cname] = ((cdf['Close'].iloc[-1] / cdf['Close'].iloc[-2]) - 1) * 100
-
-                def _make_section_chips(asset_list):
-                    """Build market snapshot chips for a section header."""
-                    chips = ""
-                    _icons = {'Gold': '&#129351;', 'DXY': '&#36;', 'S&P 500': '&#128200;',
-                              'VIX': '&#9888;', 'Crude Oil': '&#128167;', 'US 10Y': '&#128196;'}
-                    for asset in asset_list:
-                        pct = _actual_moves.get(asset)
-                        if pct is not None:
-                            color = "#10b981" if pct >= 0 else "#ef4444"
-                            arrow = "&#9650;" if pct >= 0 else "&#9660;"
-                            chips += (f'<span class="rss-chip" style="background:{color}12;color:{color};">'
-                                      f'{_icons.get(asset, "")} {asset} {arrow} {pct:+.1f}%</span>')
-                    return chips
-
-                # Category rules for classification
+                # Directional impact rules: (keywords, instrument_name, typical_gold_impact, icon_color)
                 _impact_rules = {
-                    'geopolitical': {
-                        'keywords': ['war', 'attack', 'strike', 'nuclear', 'bomb', 'missile', 'invasion', 'crisis', 'emergency', 'sanctions', 'conflict', 'geopolitical', 'tariff', 'trade war'],
-                        'level': 'high', 'is_breaking': True,
+                    'gold': {
+                        'keywords': ['gold', 'xau', 'bullion', 'precious metal', 'safe haven', 'gold price', 'gold demand', 'gold reserve'],
+                        'name': 'Gold', 'icon': '&#129351;', 'color': '#f0b90b',
                     },
                     'dollar': {
                         'keywords': ['dollar', 'usd', 'dxy', 'fed', 'federal reserve', 'interest rate', 'rate hike', 'rate cut', 'fomc', 'powell'],
-                        'level': 'high',
-                    },
-                    'gold': {
-                        'keywords': ['gold', 'xau', 'bullion', 'precious metal', 'safe haven', 'gold price', 'gold demand', 'gold reserve'],
-                        'level': 'medium',
-                    },
-                    'bonds': {
-                        'keywords': ['bond', 'yield', 'treasury', '10-year', '10y', 'debt', 'sovereign'],
-                        'level': 'medium',
+                        'name': 'Dollar', 'icon': '&#36;', 'color': '#10b981',
                     },
                     'oil': {
                         'keywords': ['oil', 'crude', 'opec', 'brent', 'wti', 'petroleum', 'energy'],
-                        'level': 'medium',
+                        'name': 'Oil', 'icon': '&#128167;', 'color': '#8b5cf6',
+                    },
+                    'bonds': {
+                        'keywords': ['bond', 'yield', 'treasury', '10-year', '10y', 'debt', 'sovereign'],
+                        'name': 'Bonds', 'icon': '&#128196;', 'color': '#3b82f6',
+                    },
+                    'geopolitical': {
+                        'keywords': ['war', 'attack', 'strike', 'nuclear', 'bomb', 'missile', 'invasion', 'crisis', 'emergency', 'sanctions', 'conflict', 'geopolitical', 'tariff', 'trade war'],
+                        'name': 'Geopolitical', 'icon': '&#9888;', 'color': '#ef4444',
+                        # Geopolitical events: Gold ↑, Stocks ↓, VIX ↑
+                        'impacts': [('Gold', '↑', '#10b981'), ('Stocks', '↓', '#ef4444'), ('VIX', '↑', '#f59e0b')],
                     },
                     'stocks': {
                         'keywords': ['stock', 's&p', 'nasdaq', 'dow', 'equity', 'wall street', 'rally', 'selloff', 'correction', 'bear market', 'bull market'],
-                        'level': 'low',
+                        'name': 'Stocks', 'icon': '&#128200;', 'color': '#f59e0b',
                     },
                 }
-
-                # Classify each article — NO chips per article, just clean headlines
-                high_items, medium_items, low_items = [], [], []
-
-                for article in news[:25]:
+                for article in news[:20]:
                     date_str = article['published'].strftime('%b %d, %H:%M') if article['published'] else ""
-                    source = article['source'] if article['source'] else ""
+                    source = f" — {article['source']}" if article['source'] else ""
                     title_lower = article['title'].lower()
-                    safe_link = article['link'] if article['link'].startswith(('http://', 'https://')) else '#'
 
+                    # Detect impacts with directional chips
+                    impact_chips = ""
                     is_breaking = False
-                    highest_level = 'low'
-                    level_priority = {'high': 3, 'medium': 2, 'low': 1}
-
+                    matched_cats = []
                     for cat_key, rule in _impact_rules.items():
                         if any(kw in title_lower for kw in rule['keywords']):
-                            if level_priority.get(rule['level'], 0) > level_priority.get(highest_level, 0):
-                                highest_level = rule['level']
-                            if rule.get('is_breaking'):
+                            matched_cats.append(cat_key)
+                            if cat_key == 'geopolitical':
                                 is_breaking = True
+                                # Show directional impacts for geopolitical events
+                                for instr, direction, dcolor in rule.get('impacts', []):
+                                    impact_chips += (f'<span style="font-size:9px;padding:2px 6px;border-radius:3px;'
+                                                     f'background:{dcolor}15;color:{dcolor};font-weight:700;'
+                                                     f'display:inline-flex;align-items:center;gap:2px;">'
+                                                     f'{instr} {direction}</span> ')
+                            else:
+                                c = rule['color']
+                                impact_chips += (f'<span style="font-size:9px;padding:2px 6px;border-radius:3px;'
+                                                 f'background:{c}15;color:{c};font-weight:700;'
+                                                 f'display:inline-flex;align-items:center;gap:3px;">'
+                                                 f'{rule["icon"]} {rule["name"]}</span> ')
 
-                    # Clean article HTML — just title + date, no repeated chips
-                    breaking_class = ' rss-breaking-bar' if is_breaking else ''
-                    prefix = '<span style="color:#ef4444;font-weight:700;font-size:10px;">&#9889; BREAKING</span> ' if is_breaking else ''
-                    item_html = (
-                        f'<div class="rss-item{breaking_class}">'
-                        f'<div class="rss-item-title">{prefix}'
-                        f'<a href="{safe_link}" target="_blank" rel="noopener noreferrer">{article["title"]}</a></div>'
-                        f'<div class="rss-item-meta">'
-                        f'<span class="rss-date">{date_str} — {source}</span>'
-                        f'</div></div>'
-                    )
-
-                    if highest_level == 'high':
-                        high_items.append(item_html)
-                    elif highest_level == 'medium':
-                        medium_items.append(item_html)
-                    else:
-                        low_items.append(item_html)
-
-                # Render sections — market snapshot chips in header ONLY (shown once)
-                full_html = ""
-
-                if high_items:
-                    high_chips = _make_section_chips(['Gold', 'S&P 500', 'VIX', 'DXY'])
-                    full_html += '<div class="news-impact-section">'
-                    full_html += (f'<div class="news-impact-header high">'
-                                  f'<div>&#128308; High Impact <span style="font-size:8px;font-weight:400;color:#ef444480;">({len(high_items)} articles)</span></div>'
-                                  f'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">{high_chips}</div>'
-                                  f'</div>')
-                    full_html += "".join(high_items)
-                    full_html += '</div>'
-
-                if medium_items:
-                    med_chips = _make_section_chips(['Gold', 'Crude Oil', 'US 10Y'])
-                    full_html += '<div class="news-impact-section">'
-                    full_html += (f'<div class="news-impact-header medium">'
-                                  f'<div>&#128992; Medium Impact <span style="font-size:8px;font-weight:400;color:#f59e0b80;">({len(medium_items)} articles)</span></div>'
-                                  f'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">{med_chips}</div>'
-                                  f'</div>')
-                    full_html += "".join(medium_items)
-                    full_html += '</div>'
-
-                if low_items:
-                    low_chips = _make_section_chips(['Gold', 'S&P 500'])
-                    full_html += '<div class="news-impact-section">'
-                    full_html += (f'<div class="news-impact-header low">'
-                                  f'<div>&#9898; Low Impact <span style="font-size:8px;font-weight:400;color:#6b7a9980;">({len(low_items)} articles)</span></div>'
-                                  f'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">{low_chips}</div>'
-                                  f'</div>')
-                    full_html += "".join(low_items)
-                    full_html += '</div>'
-
-                if full_html:
-                    st.markdown(full_html, unsafe_allow_html=True)
-                else:
-                    st.markdown('<div style="color:#6b7a99;font-size:12px;padding:8px;">No matching news found.</div>', unsafe_allow_html=True)
+                    breaking_class = ' rss-breaking' if is_breaking else ''
+                    prefix = '<span style="color:#ef4444;font-weight:700;font-size:10px;">&#9889; BREAKING </span>' if is_breaking else ''
+                    safe_link = article['link'] if article['link'].startswith(('http://', 'https://')) else '#'
+                    st.markdown(f"""<div class="rss-item{breaking_class}">
+                        <div class="rss-title">
+                            {prefix}<a href="{safe_link}" target="_blank" rel="noopener noreferrer">{article['title']}</a>
+                            <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">{impact_chips}</div>
+                            <div style="font-size:9px;color:#6b7a99;margin-top:2px;">{date_str}{source}</div>
+                        </div>
+                    </div>""", unsafe_allow_html=True)
             else:
                 st.markdown('<div style="color:#6b7a99;font-size:12px;padding:8px;">No news available. Check internet connection.</div>', unsafe_allow_html=True)
 
@@ -3164,85 +2548,30 @@ def main():
     # TAB 5 — SMC ENGINE (Placeholder)
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     with tab_smc:
-        st.markdown("""<div class="intel-card" style="padding:30px;">
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
-                <div style="font-size:28px;">🔲</div>
-                <div>
-                    <h3 style="color:#f0b90b;margin:0;">Smart Money Concepts Engine</h3>
-                    <div style="font-size:10px;color:#f59e0b;font-weight:700;letter-spacing:1px;margin-top:4px;">PRO FEATURE · COMING Q2 2026</div>
-                </div>
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
-                <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:14px;">
-                    <div style="font-size:10px;font-weight:700;color:#ef4444;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Order Blocks</div>
-                    <div style="font-size:12px;color:#a8b2c8;line-height:1.6;">Detect institutional supply/demand zones where banks placed large orders. Identifies bullish OB (last bearish candle before impulsive move up) and bearish OB (last bullish candle before drop).</div>
-                </div>
-                <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:14px;">
-                    <div style="font-size:10px;font-weight:700;color:#a855f7;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Fair Value Gaps (FVG)</div>
-                    <div style="font-size:12px;color:#a8b2c8;line-height:1.6;">Spot price imbalances where candle wicks don't overlap — areas price tends to revisit. High-probability entry zones when aligned with order blocks.</div>
-                </div>
-                <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:14px;">
-                    <div style="font-size:10px;font-weight:700;color:#10b981;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Break of Structure (BOS)</div>
-                    <div style="font-size:12px;color:#a8b2c8;line-height:1.6;">Detect when price breaks a significant swing high/low, confirming trend continuation. Filtered by timeframe alignment (Daily → 4H → 1H).</div>
-                </div>
-                <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:14px;">
-                    <div style="font-size:10px;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Liquidity Sweeps</div>
-                    <div style="font-size:12px;color:#a8b2c8;line-height:1.6;">Identify stop-hunt moves where smart money sweeps retail stop-losses at key levels before reversing. Critical for timing entries with precision.</div>
-                </div>
-            </div>
-            <div style="background:rgba(240,185,11,0.04);border:1px solid rgba(240,185,11,0.12);border-radius:8px;padding:14px;text-align:center;">
-                <div style="font-size:11px;color:#f0b90b;font-weight:700;margin-bottom:6px;">Multi-Timeframe Cascade: Daily → 4H → 1H → 15m → 5m</div>
-                <div style="font-size:10px;color:#8892ab;">SMC signals will integrate with the existing Signal Engine for confluence-based entries with institutional backing.</div>
-            </div>
+        st.markdown("""<div class="intel-card" style="padding:30px;text-align:center;">
+            <div style="font-size:32px;margin-bottom:12px;">🔲</div>
+            <h3 style="color:#f0b90b;margin-bottom:8px;">Smart Money Concepts Engine</h3>
+            <p style="color:#8892ab;font-size:13px;line-height:1.6;">
+                Order Blocks · Liquidity Sweeps · Break of Structure · Fair Value Gaps<br>
+                Multi-timeframe cascade: Daily → 4H → 1H → 15m → 5m<br><br>
+                <span style="color:#f59e0b;font-weight:600;">Coming Soon</span> — This module will detect institutional order flow patterns
+                across timeframes and integrate with the signal engine for higher-conviction entries.
+            </p>
         </div>""", unsafe_allow_html=True)
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # TAB 6 — BACKTEST ENGINE (Placeholder)
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     with tab_backtest:
-        st.markdown("""<div class="intel-card" style="padding:30px;">
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
-                <div style="font-size:28px;">📈</div>
-                <div>
-                    <h3 style="color:#f0b90b;margin:0;">Signal Backtesting Engine</h3>
-                    <div style="font-size:10px;color:#f59e0b;font-weight:700;letter-spacing:1px;margin-top:4px;">PRO FEATURE · COMING Q2 2026</div>
-                </div>
-            </div>
-            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;">
-                <div style="background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.12);border-radius:8px;padding:16px;text-align:center;">
-                    <div style="font-size:24px;font-weight:900;color:#10b981;font-family:JetBrains Mono;">—%</div>
-                    <div style="font-size:9px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px;">Win Rate</div>
-                </div>
-                <div style="background:rgba(59,130,246,0.06);border:1px solid rgba(59,130,246,0.12);border-radius:8px;padding:16px;text-align:center;">
-                    <div style="font-size:24px;font-weight:900;color:#60a5fa;font-family:JetBrains Mono;">—:—</div>
-                    <div style="font-size:9px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px;">Avg Risk:Reward</div>
-                </div>
-                <div style="background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.12);border-radius:8px;padding:16px;text-align:center;">
-                    <div style="font-size:24px;font-weight:900;color:#ef4444;font-family:JetBrains Mono;">—%</div>
-                    <div style="font-size:9px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px;">Max Drawdown</div>
-                </div>
-                <div style="background:rgba(240,185,11,0.06);border:1px solid rgba(240,185,11,0.12);border-radius:8px;padding:16px;text-align:center;">
-                    <div style="font-size:24px;font-weight:900;color:#f0b90b;font-family:JetBrains Mono;">—</div>
-                    <div style="font-size:9px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px;">Profit Factor</div>
-                </div>
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
-                <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:14px;">
-                    <div style="font-size:10px;font-weight:700;color:#a8b2c8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Per-Pattern Breakdown</div>
-                    <div style="font-size:12px;color:#6b7a99;line-height:1.6;">Win rate, avg R:R, and frequency for each pattern type: Hammer, Engulfing, Pin Bar, Doji, Shooting Star — filtered by S/R proximity and trend alignment.</div>
-                </div>
-                <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:14px;">
-                    <div style="font-size:10px;font-weight:700;color:#a8b2c8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Session Performance</div>
-                    <div style="font-size:12px;color:#6b7a99;line-height:1.6;">Compare signal accuracy across London, NY, and Asia sessions. Reveals which setups work best during high-liquidity overlap hours vs. quiet sessions.</div>
-                </div>
-            </div>
-            <div style="background:rgba(16,185,129,0.04);border:1px solid rgba(16,185,129,0.12);border-radius:8px;padding:14px;">
-                <div style="font-size:9px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Equity Curve Preview</div>
-                <div style="height:60px;background:linear-gradient(90deg,rgba(16,185,129,0.1),rgba(16,185,129,0.05));border-radius:4px;display:flex;align-items:flex-end;gap:2px;padding:4px 8px;">""" +
-                "".join([f'<div style="width:3px;background:#10b981;opacity:{0.3+(i%5)*0.15};border-radius:1px;height:{15+((i*7+3)%40)}px;"></div>' for i in range(60)]) +
-                """</div>
-                <div style="font-size:10px;color:#5a6a8a;margin-top:6px;text-align:center;font-style:italic;">Simulated equity curve — real backtest data will replace this when the engine ships.</div>
-            </div>
+        st.markdown("""<div class="intel-card" style="padding:30px;text-align:center;">
+            <div style="font-size:32px;margin-bottom:12px;">📈</div>
+            <h3 style="color:#f0b90b;margin-bottom:8px;">Signal Backtesting Engine</h3>
+            <p style="color:#8892ab;font-size:13px;line-height:1.6;">
+                Win Rate · Average R:R · Max Drawdown · Profit Factor<br>
+                Per-pattern breakdown · Session performance · Equity curve<br><br>
+                <span style="color:#f59e0b;font-weight:600;">Coming Soon</span> — This module will backtest all signal engine patterns
+                against 3-6 months of historical data and show which setups actually perform.
+            </p>
         </div>""", unsafe_allow_html=True)
 
     # ══════════════════════════════════════════════════
@@ -3251,7 +2580,7 @@ def main():
     st.markdown(f"""<div class="section-divider"></div>
     <div style="text-align:center;padding:20px 0;">
         <div style="font-size:12px;font-weight:900;color:#f0b90b;letter-spacing:3px;margin-bottom:6px;">GOLD COMMAND</div>
-        <div style="font-size:10px;color:#8a94a8;margin-bottom:6px;">XAU/USD Market Intelligence Terminal&nbsp;&nbsp;·&nbsp;&nbsp;v2.2</div>
+        <div style="font-size:10px;color:#8a94a8;margin-bottom:6px;">XAU/USD Market Intelligence Terminal&nbsp;&nbsp;·&nbsp;&nbsp;v2.0</div>
         <div style="font-size:9px;color:#5a6a8a;margin-bottom:8px;">Developed by <span style="color:#f0b90b;font-weight:600;">Anoop B.</span></div>
         <div style="display:flex;justify-content:center;gap:20px;margin-bottom:8px;">
             <span style="font-size:8px;color:#3d4b6b;">📊 6 Intelligence Modules</span>
@@ -3266,8 +2595,8 @@ def main():
             </a>
         </div>
         <div style="font-size:8px;color:#3d4b6b;letter-spacing:0.5px;">
-            Data: GoldAPI · FinnHub · Yahoo Finance · Google News RSS&nbsp;&nbsp;|&nbsp;&nbsp;Charts: TradingView&nbsp;&nbsp;|&nbsp;&nbsp;Signals: Proprietary Engine&nbsp;&nbsp;|&nbsp;&nbsp;Broker: ICMarkets<br>
-            <span style="color:#f59e0b;">⚠️ This is not financial advice.</span> All data is for informational purposes only.
+            Data: Yahoo Finance, Google News RSS&nbsp;&nbsp;|&nbsp;&nbsp;Charts: TradingView&nbsp;&nbsp;|&nbsp;&nbsp;Signals: Proprietary Engine<br>
+            <span style="color:#f59e0b;">⚠️ This is not financial advice.</span> All data is delayed and for informational purposes only.
         </div>
     </div>""", unsafe_allow_html=True)
 
