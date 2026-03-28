@@ -432,7 +432,7 @@ header {visibility: hidden;}
 }
 .daily-brief-header {
     display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 12px;
+    margin-bottom: 14px;
 }
 .daily-brief-title {
     font-size: 10px; font-weight: 800; color: #f0b90b;
@@ -450,9 +450,85 @@ header {visibility: hidden;}
     font-size: 10px; font-weight: 800; padding: 4px 14px; border-radius: 20px;
     letter-spacing: 0.8px; text-transform: uppercase;
 }
+/* ─── Brief Block Grid ─── */
+.brief-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 14px;
+}
+.brief-block {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.04);
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+}
+.brief-block-icon {
+    font-size: 20px;
+    line-height: 1;
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+}
+.brief-block-content {
+    flex: 1;
+}
+.brief-block-label {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #5a6a8a;
+    margin-bottom: 3px;
+}
+.brief-block-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: #e0e6f0;
+    line-height: 1.4;
+}
+.brief-block-value .up { color: #10b981; }
+.brief-block-value .down { color: #ef4444; }
+.brief-block-value .gold { color: #f0b90b; }
+.brief-block-value .neutral { color: #f59e0b; }
+.brief-block-value .muted { color: #6b7a99; font-size: 11px; font-weight: 400; }
+/* ─── Price hero row ─── */
+.brief-price-row {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 6px;
+}
+.brief-price-main {
+    font-size: 28px;
+    font-weight: 900;
+    color: #f0b90b;
+    font-family: 'JetBrains Mono', monospace !important;
+    letter-spacing: -0.5px;
+}
+.brief-price-change {
+    font-size: 14px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 6px;
+}
+.brief-trend-line {
+    font-size: 11px;
+    color: #8892ab;
+    margin-bottom: 14px;
+}
+.brief-trend-line b { color: #c8d0e4 !important; }
 @media (max-width: 768px) {
     .daily-brief { padding: 14px 16px; }
-    .daily-brief-body { font-size: 12px; line-height: 1.7; }
+    .brief-grid { grid-template-columns: 1fr; }
+    .brief-price-main { font-size: 22px; }
 }
 
 /* ═══ Divider ═══ */
@@ -1467,10 +1543,12 @@ def get_instrument_icon(name):
 
 
 def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, trade_signals, signal_trend, ranges, pivots, key_levels):
-    """Generate a plain-English daily brief summary for the top of the dashboard."""
+    """Generate a structured daily brief with visual blocks for the dashboard."""
     # Direction
-    direction = "up" if daily_chg >= 0 else "down"
-    dir_class = "highlight-up" if daily_chg >= 0 else "highlight-down"
+    is_up = daily_chg >= 0
+    chg_color = "#10b981" if is_up else "#ef4444"
+    chg_bg = "rgba(16,185,129,0.1)" if is_up else "rgba(239,68,68,0.1)"
+    arrow = "▲" if is_up else "▼"
 
     # Session bias from drivers
     bull_count = sum(1 for d in drivers if d[2] == "BULLISH")
@@ -1479,67 +1557,133 @@ def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, 
         bias = "BULLISH"
         bias_color = "#10b981"
         bias_bg = "rgba(16,185,129,0.12)"
-        bias_word = "bullish"
+        trend_word = "bullish"
     elif bear_count > bull_count + 1:
         bias = "BEARISH"
         bias_color = "#ef4444"
         bias_bg = "rgba(239,68,68,0.12)"
-        bias_word = "bearish"
+        trend_word = "bearish"
     else:
         bias = "NEUTRAL"
         bias_color = "#f59e0b"
         bias_bg = "rgba(245,158,11,0.12)"
-        bias_word = "mixed"
+        trend_word = "mixed"
 
-    # Key driver (most impactful)
-    key_drivers_text = []
+    # Key drivers
+    key_drivers_parts = []
     for d in drivers:
         name, detail, impact = d[0], d[1], d[2]
         if impact != "NEUTRAL":
-            key_drivers_text.append(f"{name} ({detail})")
-    top_drivers = ", ".join(key_drivers_text[:3]) if key_drivers_text else "no strong macro catalysts"
+            d_icon = "🟢" if impact == "BULLISH" else "🔴"
+            key_drivers_parts.append(f'{d_icon} {name} <span class="muted">({detail})</span>')
+    drivers_html = " &nbsp;·&nbsp; ".join(key_drivers_parts[:4]) if key_drivers_parts else '<span class="muted">No strong macro catalysts</span>'
 
-    # RSI context
+    # RSI block
     if rsi < 30:
-        rsi_text = f'RSI at <span class="highlight-down">{rsi:.0f} (oversold)</span> — bounce potential'
+        rsi_label, rsi_color, rsi_icon = "OVERSOLD", "#ef4444", "🔻"
+        rsi_note = "Bounce potential — watch for reversal patterns"
     elif rsi > 70:
-        rsi_text = f'RSI at <span class="highlight-up">{rsi:.0f} (overbought)</span> — pullback risk'
+        rsi_label, rsi_color, rsi_icon = "OVERBOUGHT", "#10b981", "🔺"
+        rsi_note = "Pullback risk — momentum stretched"
+    elif rsi < 40:
+        rsi_label, rsi_color, rsi_icon = "WEAK", "#f59e0b", "📉"
+        rsi_note = "Below neutral — bears in control"
+    elif rsi > 60:
+        rsi_label, rsi_color, rsi_icon = "STRONG", "#10b981", "📈"
+        rsi_note = "Above neutral — bulls in control"
     else:
-        rsi_text = f"RSI at {rsi:.0f} (neutral zone)"
+        rsi_label, rsi_color, rsi_icon = "NEUTRAL", "#8892ab", "⚖️"
+        rsi_note = "Balanced momentum — no edge"
 
-    # Range context
+    # Range utilization block
     daily_util = ranges['today']['util']
     if daily_util > 100:
-        range_text = f"Today's range has <b>exceeded</b> the ATR-expected move ({daily_util:.0f}% utilized) — extended conditions."
+        range_icon, range_status, range_color = "🔥", "EXCEEDED", "#ef4444"
+        range_note = f"{daily_util:.0f}% of ATR used — extended"
     elif daily_util > 70:
-        range_text = f"Today's range is nearing the expected daily move ({daily_util:.0f}% of ATR used)."
+        range_icon, range_status, range_color = "⚡", "NEAR LIMIT", "#f59e0b"
+        range_note = f"{daily_util:.0f}% of ATR used — nearing cap"
     else:
-        range_text = f"Today's range has room to expand ({daily_util:.0f}% of expected ATR used)."
+        range_icon, range_status, range_color = "📊", "ROOM TO RUN", "#10b981"
+        range_note = f"{daily_util:.0f}% of ATR used — expansion likely"
 
-    # Signal summary
+    # Signal block
     if trade_signals:
         top_sig = trade_signals[0]
-        sig_text = (f'The signal engine has detected a <b>{top_sig["direction"]}</b> setup '
-                   f'({top_sig["confidence"]} confidence, score {top_sig["score"]}) '
-                   f'based on a {top_sig["pattern_name"]} at ${top_sig["level_price"]:,.2f}.')
+        sig_dir = top_sig["direction"]
+        sig_icon = "🟢" if sig_dir == "LONG" else "🔴"
+        sig_color = "#10b981" if sig_dir == "LONG" else "#ef4444"
+        sig_value = f'{sig_dir} · {top_sig["confidence"]} · Score {top_sig["score"]}'
+        sig_note = f'{top_sig["pattern_name"]} at ${top_sig["level_price"]:,.0f}'
     else:
-        sig_text = "No active trade signals right now — the engine is scanning for setups at key levels."
+        sig_icon, sig_color = "🔍", "#6b7a99"
+        sig_value = "Scanning..."
+        sig_note = "No active setups — watching key levels"
 
-    # Key levels to watch
+    # Key levels block
     nearest_support = pivots['S1']
     nearest_resistance = pivots['R1']
-    levels_text = (f'Key levels: support at <span class="highlight-up">${nearest_support:,.0f}</span>, '
-                  f'resistance at <span class="highlight-down">${nearest_resistance:,.0f}</span> (Fibonacci pivots).')
 
-    # Compose the brief
+    # Trend label
+    trend_display = signal_trend.replace("_", " ").title()
+    trend_color = "#10b981" if "BULL" in signal_trend else "#ef4444" if "BEAR" in signal_trend else "#f59e0b"
+
+    # Compose structured brief HTML
     brief_html = (
-        f'<p>Gold is trading at <b>${current:,.2f}</b>, '
-        f'<span class="{dir_class}">{direction} ${abs(daily_chg):,.2f} ({daily_pct:+.2f}%)</span> on the session. '
-        f'The daily trend is <b>{signal_trend.replace("_", " ").lower()}</b> and macro conditions are <b>{bias_word}</b> — '
-        f'driven by {top_drivers}.</p>'
-        f'<p>{rsi_text}. {range_text}</p>'
-        f'<p>{sig_text}</p>'
-        f'<p>{levels_text}</p>'
+        # Price hero row
+        f'<div class="brief-price-row">'
+        f'<span class="brief-price-main">${current:,.2f}</span>'
+        f'<span class="brief-price-change" style="color:{chg_color};background:{chg_bg};">'
+        f'{arrow} ${abs(daily_chg):,.2f} ({daily_pct:+.2f}%)</span>'
+        f'</div>'
+        # Trend + macro summary line
+        f'<div class="brief-trend-line">'
+        f'Daily trend: <b style="color:{trend_color};">{trend_display}</b>'
+        f' &nbsp;·&nbsp; Macro bias: <b style="color:{bias_color};">{bias}</b>'
+        f' &nbsp;·&nbsp; {drivers_html}'
+        f'</div>'
+        # 4-block grid
+        f'<div class="brief-grid">'
+        # Block 1: RSI
+        f'<div class="brief-block">'
+        f'<div class="brief-block-icon" style="background:rgba(107,122,153,0.08);">{rsi_icon}</div>'
+        f'<div class="brief-block-content">'
+        f'<div class="brief-block-label">RSI (14)</div>'
+        f'<div class="brief-block-value">'
+        f'<span style="color:{rsi_color};font-size:18px;font-weight:800;">{rsi:.0f}</span>'
+        f' <span class="muted">{rsi_label}</span></div>'
+        f'<div class="brief-block-value muted">{rsi_note}</div>'
+        f'</div></div>'
+        # Block 2: Range
+        f'<div class="brief-block">'
+        f'<div class="brief-block-icon" style="background:rgba(107,122,153,0.08);">{range_icon}</div>'
+        f'<div class="brief-block-content">'
+        f'<div class="brief-block-label">Daily Range</div>'
+        f'<div class="brief-block-value">'
+        f'<span style="color:{range_color};font-size:18px;font-weight:800;">{daily_util:.0f}%</span>'
+        f' <span class="muted">{range_status}</span></div>'
+        f'<div class="brief-block-value muted">{range_note}</div>'
+        f'</div></div>'
+        # Block 3: Signal
+        f'<div class="brief-block">'
+        f'<div class="brief-block-icon" style="background:rgba(107,122,153,0.08);">{sig_icon}</div>'
+        f'<div class="brief-block-content">'
+        f'<div class="brief-block-label">Signal Engine</div>'
+        f'<div class="brief-block-value"><span style="color:{sig_color};">{sig_value}</span></div>'
+        f'<div class="brief-block-value muted">{sig_note}</div>'
+        f'</div></div>'
+        # Block 4: Key Levels
+        f'<div class="brief-block">'
+        f'<div class="brief-block-icon" style="background:rgba(107,122,153,0.08);">🎯</div>'
+        f'<div class="brief-block-content">'
+        f'<div class="brief-block-label">Key Levels</div>'
+        f'<div class="brief-block-value">'
+        f'<span class="up">▲ ${nearest_resistance:,.0f}</span>'
+        f' &nbsp;·&nbsp; '
+        f'<span class="down">▼ ${nearest_support:,.0f}</span></div>'
+        f'<div class="brief-block-value muted">Fibonacci pivot resistance · support</div>'
+        f'</div></div>'
+        f'</div>'
     )
 
     return brief_html, bias, bias_color, bias_bg
@@ -1649,29 +1793,28 @@ def main():
         st.markdown('<div style="border-bottom:1px solid #1a2240;margin:12px 0;"></div>', unsafe_allow_html=True)
 
         # ICMarkets Live Price Widget + Partner Banner
-        st.markdown("""<div style="text-align:center;margin-bottom:6px;">
-            <a href="https://icmarkets.com/?camp=87951" target="_blank">
-                <img src="https://promo.icmarkets.com/Logos/2021/400x110/BAN_ICM_black_400x110.png"
-                     style="width:100%;max-width:260px;border-radius:6px;" alt="ICMarkets"/>
-            </a>
-        </div>""", unsafe_allow_html=True)
-
-        st.components.v1.iframe(
-            src="https://secure.icmarkets.com//Partner/Widget/PriceWidget/87951",
-            width=273,
-            height=480,
-            scrolling=False,
-        )
-
-        st.markdown("""<div style="text-align:center;margin-top:4px;">
-            <a href="https://icmarkets.com/?camp=87951" target="_blank"
-               style="font-size:9px;color:#60a5fa;text-decoration:none;font-weight:600;">
-                Open Live Account →
-            </a>
-            <span style="font-size:7px;color:#3d4b6b;display:block;margin-top:3px;">
-                Raw spreads from 0.0 pips · ASIC regulated
-            </span>
-        </div>""", unsafe_allow_html=True)
+        st.components.v1.html("""
+            <div style="text-align:center;background:#000;border-radius:10px;padding:10px 6px 8px;
+                border:1px solid rgba(59,130,246,0.15);">
+                <a href="https://icmarkets.com/?camp=87951" target="_blank">
+                    <img src="https://promo.icmarkets.com/Logos/2021/400x110/BAN_ICM_black_400x110.png"
+                         style="width:100%;max-width:240px;margin-bottom:8px;" alt="ICMarkets"/>
+                </a>
+                <iframe src="https://secure.icmarkets.com/Partner/Widget/PriceWidget/87951"
+                    width="100%" height="420" frameborder="0"
+                    style="border:none;border-radius:6px;max-width:273px;">
+                </iframe>
+                <div style="margin-top:6px;">
+                    <a href="https://icmarkets.com/?camp=87951" target="_blank"
+                       style="font-size:11px;color:#4ade80;text-decoration:none;font-weight:700;">
+                        Open Live Account →
+                    </a>
+                    <div style="font-size:8px;color:#666;margin-top:3px;">
+                        Raw spreads from 0.0 pips · ASIC regulated
+                    </div>
+                </div>
+            </div>
+        """, height=560)
 
     # Auto-refresh trigger
     if auto_refresh:
@@ -1761,7 +1904,7 @@ def main():
             border:1px solid rgba(240,185,11,0.15);border-radius:10px;padding:16px 20px;margin-bottom:16px;">
             <div style="display:flex;justify-content:space-between;align-items:center;">
                 <div>
-                    <div style="font-size:14px;font-weight:700;color:#f0b90b;margin-bottom:4px;">Welcome to Gold Command</div>
+                    <div style="font-size:14px;font-weight:700;color:#f0b90b;margin-bottom:4px;">Welcome to Thankara</div>
                     <div style="font-size:11px;color:#8892ab;line-height:1.6;">
                         Your AI-powered gold market intelligence terminal. Start with the <b style="color:#f0b90b;">Daily Brief</b> below for a quick summary,
                         then explore <b style="color:#f0b90b;">Trade Signals</b> and <b style="color:#f0b90b;">Intelligence</b> tabs.
@@ -2580,7 +2723,7 @@ def main():
     st.markdown(f"""<div class="section-divider"></div>
     <div style="text-align:center;padding:20px 0;">
         <div style="font-size:12px;font-weight:900;color:#f0b90b;letter-spacing:3px;margin-bottom:6px;">GOLD COMMAND</div>
-        <div style="font-size:10px;color:#8a94a8;margin-bottom:6px;">XAU/USD Market Intelligence Terminal&nbsp;&nbsp;·&nbsp;&nbsp;v2.0</div>
+        <div style="font-size:10px;color:#8a94a8;margin-bottom:6px;">XAU/USD Market Intelligence Terminal&nbsp;&nbsp;·&nbsp;&nbsp;v2.1</div>
         <div style="font-size:9px;color:#5a6a8a;margin-bottom:8px;">Developed by <span style="color:#f0b90b;font-weight:600;">Anoop B.</span></div>
         <div style="display:flex;justify-content:center;gap:20px;margin-bottom:8px;">
             <span style="font-size:8px;color:#3d4b6b;">📊 6 Intelligence Modules</span>
