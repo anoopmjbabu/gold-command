@@ -32,7 +32,7 @@ logger = logging.getLogger("gold_command")
 # CONFIG
 # ═══════════════════════════════════════════════════════════════
 st.set_page_config(
-    page_title="GOLD COMMAND — XAU/USD Intelligence | by Anoop B.",
+    page_title="GOLD COMMAND — XAU/USD Intelligence | by Capt. Gold",
     page_icon="🥇",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -2112,7 +2112,7 @@ def main():
         <div>
             <h1 style="margin:0;">GOLD COMMAND</h1>
             <span class="sub">XAU/USD Market Intelligence Terminal</span>
-            <div style="font-size:9px;color:#5a6a8a;margin-top:3px;letter-spacing:0.5px;">Developed by <span style="color:#f0b90b;">Anoop B.</span></div>
+            <div style="font-size:9px;color:#5a6a8a;margin-top:3px;letter-spacing:0.5px;">Developed by <span style="color:#f0b90b;">Capt. Gold</span></div>
         </div>
         <div style="display:flex; align-items:center; gap:16px;">
             <span class="live-badge"><span class="live-dot"></span>LIVE DATA</span>
@@ -2128,7 +2128,7 @@ def main():
         st.markdown("""<div style="text-align:center;padding:12px 0 16px;">
             <div style="font-size:18px;font-weight:900;color:#f0b90b;letter-spacing:2px;">GOLD COMMAND</div>
             <div style="font-size:9px;color:#5a6a8a;letter-spacing:1px;margin-top:2px;">XAU/USD Intelligence Terminal</div>
-            <div style="font-size:8px;color:#3d4b6b;margin-top:4px;">v2.0 · by Anoop B.</div>
+            <div style="font-size:8px;color:#3d4b6b;margin-top:4px;">v2.0 · by Capt. Gold</div>
         </div>""", unsafe_allow_html=True)
 
         st.markdown('<div style="border-bottom:1px solid #1a2240;margin:8px 0;"></div>', unsafe_allow_html=True)
@@ -3230,7 +3230,7 @@ def main():
     <div style="text-align:center;padding:20px 0;">
         <div style="font-size:12px;font-weight:900;color:#f0b90b;letter-spacing:3px;margin-bottom:6px;">GOLD COMMAND</div>
         <div style="font-size:10px;color:#8a94a8;margin-bottom:6px;">XAU/USD Market Intelligence Terminal&nbsp;&nbsp;·&nbsp;&nbsp;v2.0</div>
-        <div style="font-size:9px;color:#5a6a8a;margin-bottom:8px;">Developed by <span style="color:#f0b90b;font-weight:600;">Anoop B.</span></div>
+        <div style="font-size:9px;color:#5a6a8a;margin-bottom:8px;">Developed by <span style="color:#f0b90b;font-weight:600;">Capt. Gold</span></div>
         <div style="display:flex;justify-content:center;gap:20px;margin-bottom:8px;">
             <span style="font-size:8px;color:#3d4b6b;">📊 6 Intelligence Modules</span>
             <span style="font-size:8px;color:#3d4b6b;">🎯 Multi-TF Signal Engine</span>
