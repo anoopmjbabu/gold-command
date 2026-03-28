@@ -1935,36 +1935,44 @@ def detect_volume_spikes(df, threshold=1.5):
     """
     df = df.copy()
 
-    # Compute price-based metrics
+    # Compute price-based metrics on ALL rows first
     df['change'] = df['Close'] - df['Open']
     df['change_pct'] = (df['change'] / df['Open']).abs() * 100
     df['daily_range'] = df['High'] - df['Low']
     df['range_pct'] = (df['daily_range'] / df['Close']) * 100
     df['close_to_close'] = (df['Close'] - df['Close'].shift(1)).abs()
-    df['close_to_close_pct'] = (df['close_to_close'] / df['Close'].shift(1)).abs() * 100
-    df['range_vs_atr'] = df['daily_range'] / df['ATR_14'] if 'ATR_14' in df.columns else 1.0
+    df['close_to_close_pct'] = (df['close_to_close'] / df['Close'].shift(1)) * 100
+    if 'ATR_14' in df.columns:
+        df['range_vs_atr'] = df['daily_range'] / df['ATR_14'].replace(0, np.nan)
+    else:
+        df['range_vs_atr'] = 1.0
 
-    # Trigger 1: Volume spike (volume > threshold x 20-day avg)
+    # Fill NaN in Vol_ratio to prevent silent drops
+    if 'Vol_ratio' in df.columns:
+        df['Vol_ratio'] = df['Vol_ratio'].fillna(0)
+
+    # ── Trigger 1: Volume spike (volume > threshold x 20-day avg) ──
     vol_mask = df['Vol_ratio'] >= threshold
 
-    # Trigger 2: Price-change vs ATR (close-to-close move > 1.0x ATR)
+    # ── Trigger 2: Price-change vs ATR (close-to-close > 1.0x ATR) ──
     if 'ATR_14' in df.columns:
         price_atr_mask = df['close_to_close'] > (df['ATR_14'] * 1.0)
+        price_atr_mask = price_atr_mask.fillna(False)
     else:
         price_atr_mask = pd.Series(False, index=df.index)
 
-    # Trigger 3: Range vs ATR (daily high-low > 1.2x ATR)
+    # ── Trigger 3: Range vs ATR (daily high-low > 1.2x ATR) ──
     if 'ATR_14' in df.columns:
         range_atr_mask = df['daily_range'] > (df['ATR_14'] * 1.2)
+        range_atr_mask = range_atr_mask.fillna(False)
     else:
         range_atr_mask = pd.Series(False, index=df.index)
 
-    # Trigger 4: Absolute % move (catches big moves even when ATR is inflated)
-    # >1.5% close-to-close is significant for gold regardless of ATR
-    pct_move_mask = df['close_to_close_pct'] > 1.5
+    # ── Trigger 4: Absolute % move (>1% close-to-close — always fires) ──
+    pct_move_mask = df['close_to_close_pct'].fillna(0) > 1.0
 
-    # Trigger 5: Absolute % range (>2% intraday range is a big day)
-    pct_range_mask = df['range_pct'] > 2.0
+    # ── Trigger 5: Absolute % range (>1.5% intraday range — always fires) ──
+    pct_range_mask = df['range_pct'].fillna(0) > 1.5
 
     # Combine: any trigger qualifies
     combined_mask = vol_mask | price_atr_mask | range_atr_mask | pct_move_mask | pct_range_mask
@@ -2032,6 +2040,9 @@ def correlate_news_to_spikes(spikes, news, corr_data=None, econ_events=None):
             'change': spike['change'],
             'change_pct': spike['change_pct'],
             'direction': spike['direction'],
+            'daily_range': spike['daily_range'] if 'daily_range' in spike.index else spike['High'] - spike['Low'],
+            'close_to_close': spike['close_to_close'] if 'close_to_close' in spike.index else 0,
+            'trigger': spike['trigger'] if 'trigger' in spike.index else '',
             'news': matched_news[:3],
             'asset_moves': asset_moves,
             'econ_events': matched_events[:3],
@@ -2609,7 +2620,8 @@ def generate_three_tier_analysis(df, spikes_correlated, drivers):
     if spikes_correlated:
         last_spike = spikes_correlated[0]
         spike_news = last_spike['news'][0]['title'] if last_spike['news'] else "No specific catalyst identified"
-        spike_context = f"The most recent volume spike was on {last_spike['date']} ({last_spike['direction']}, {last_spike['vol_ratio']:.1f}x avg volume). Likely catalyst: {spike_news}"
+        s_rng = last_spike.get('daily_range', last_spike['high'] - last_spike['low'])
+        spike_context = f"The most recent volume spike was on {last_spike['date']} ({last_spike['direction']}, range ${s_rng:,.0f}, {last_spike['vol_ratio']:.1f}x avg volume). Likely catalyst: {spike_news}"
 
     # Top driver names for narrative use
     top_bull = bull_drivers[0][0] if bull_drivers else None
@@ -3562,6 +3574,12 @@ def main():
     regime_html = get_market_regime_html(gold_df, econ_events)
     st.markdown(regime_html, unsafe_allow_html=True)
 
+    # ── Refresh Data Button (main screen) ──
+    ref_col1, ref_col2, ref_col3 = st.columns([4, 1, 4])
+    with ref_col2:
+        if st.button("🔄 Refresh Data", use_container_width=True, help="Clear cache and reload all market data"):
+            st.cache_data.clear()
+            st.rerun()
 
     # ══════════════════════════════════════════════════
     # TOP KPI ROW — Custom HTML Cards
@@ -3761,12 +3779,17 @@ def main():
                     </div>""", unsafe_allow_html=True)
                     for s in week_spikes[:5]:
                         s_color = "#10b981" if s['direction'] == 'UP' else "#ef4444"
-                        trigger_tag = f" · <span style='color:#a855f7;'>{s.get('trigger', 'volume')}</span>" if s.get('trigger') else ""
+                        s_range = s.get('daily_range', s['high'] - s['low'])
+                        s_ctc = s.get('close_to_close', abs(s['change']))
+                        s_main = max(s_ctc, abs(s['change']))
+                        s_main_pct = (s_main / s['close']) * 100 if s['close'] > 0 else 0
+                        trigger_tag = f" · <span style='color:#a855f7;font-size:9px;'>{s.get('trigger', '')}</span>" if s.get('trigger') else ""
                         st.markdown(
                             f'<div style="background:rgba(15,20,40,0.6);border:1px solid rgba(26,34,64,0.5);border-radius:8px;padding:10px 14px;margin-bottom:6px;">'
                             f'<span style="color:#8892ab;font-size:11px;">{s["date"]}</span> · '
                             f'<span style="color:{s_color};font-weight:700;">{s["direction"]}</span> '
-                            f'<span style="color:#e2e8f0;">${abs(s["change"]):,.0f} ({s["change_pct"]:.1f}%)</span>'
+                            f'<span style="color:#a855f7;font-weight:700;">Range ${s_range:,.0f}</span> · '
+                            f'<span style="color:#e2e8f0;">${s_main:,.0f} move ({s_main_pct:.1f}%)</span>'
                             f'{trigger_tag}'
                             f'<span style="float:right;color:#6b7a99;font-size:10px;">{s["vol_ratio"]:.1f}x vol</span>'
                             f'</div>',
@@ -3799,9 +3822,9 @@ def main():
 
                 # COT positioning summary for monthly
                 cot_text = ""
-                if cot_data and cot_data.get('latest'):
-                    lat = cot_data['latest']
-                    net_mm = lat.get('net_managed_money', 0)
+                if cot_data and isinstance(cot_data, list) and len(cot_data) > 0:
+                    lat = cot_data[0]
+                    net_mm = lat.get('mm_net', 0)
                     cot_bias = "net long" if net_mm > 0 else "net short"
                     cot_text = f'Managed money is <b>{cot_bias}</b> ({net_mm:+,.0f} contracts). '
 
@@ -3859,7 +3882,11 @@ def main():
                     </div>""", unsafe_allow_html=True)
                     for s in month_spikes[:10]:
                         s_color = "#10b981" if s['direction'] == 'UP' else "#ef4444"
-                        trigger_tag = f" · <span style='color:#a855f7;'>{s.get('trigger', 'volume')}</span>" if s.get('trigger') else ""
+                        s_range = s.get('daily_range', s['high'] - s['low'])
+                        s_ctc = s.get('close_to_close', abs(s['change']))
+                        s_main = max(s_ctc, abs(s['change']))
+                        s_main_pct = (s_main / s['close']) * 100 if s['close'] > 0 else 0
+                        trigger_tag = f" · <span style='color:#a855f7;font-size:9px;'>{s.get('trigger', '')}</span>" if s.get('trigger') else ""
                         news_tags = ""
                         if s.get('news'):
                             news_tags = " · ".join([f"<span style='color:#94a3b8;font-size:9px;'>{n['title'][:40]}...</span>" for n in s['news'][:2]])
@@ -3868,7 +3895,8 @@ def main():
                             f'<div style="background:rgba(15,20,40,0.6);border:1px solid rgba(26,34,64,0.5);border-radius:8px;padding:10px 14px;margin-bottom:6px;">'
                             f'<span style="color:#8892ab;font-size:11px;">{s["date"]}</span> · '
                             f'<span style="color:{s_color};font-weight:700;">{s["direction"]}</span> '
-                            f'<span style="color:#e2e8f0;">${abs(s["change"]):,.0f} ({s["change_pct"]:.1f}%)</span>'
+                            f'<span style="color:#a855f7;font-weight:700;">Range ${s_range:,.0f}</span> · '
+                            f'<span style="color:#e2e8f0;">${s_main:,.0f} move ({s_main_pct:.1f}%)</span>'
                             f'{trigger_tag}'
                             f'<span style="float:right;color:#6b7a99;font-size:10px;">{s["vol_ratio"]:.1f}x vol</span>'
                             f'{news_tags}'
@@ -4509,6 +4537,15 @@ def main():
                                     f'background:{mv_color}12;color:{mv_color};font-weight:600;margin-right:4px;">'
                                     f'{a_name} {mv_arrow}{abs(mv["change_pct"]):.1f}%</span>')
 
+            # Show the larger of close-to-close or open-close as the main metric
+            ctc = spike.get('close_to_close', 0)
+            oc = abs(spike['change'])
+            rng = spike.get('daily_range', spike['high'] - spike['low'])
+            # Use close-to-close if it's bigger than open-close (captures gaps)
+            main_chg = ctc if ctc > oc else oc
+            main_pct = (main_chg / spike['close']) * 100 if spike['close'] > 0 else 0
+            trigger_text = spike.get('trigger', '')
+
             st.markdown(f"""<div class="spike-card" style="border-left:3px solid {dir_color};">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;">
                     <div>
@@ -4518,10 +4555,13 @@ def main():
                         </div>
                     </div>
                     <div style="text-align:right;">
-                        <div style="font-size:12px;font-weight:800;color:{dir_color};font-family:JetBrains Mono;">
-                            {dir_arrow} ${abs(spike['change']):,.2f} ({spike['change_pct']:+.2f}%)
+                        <div style="font-size:14px;font-weight:800;color:#a855f7;font-family:JetBrains Mono;">
+                            Range ${rng:,.0f} <span style="font-size:11px;">({rng/spike['close']*100:.1f}%)</span>
                         </div>
-                        <div style="font-size:10px;color:#f0b90b;font-weight:700;margin-top:2px;">{spike['vol_ratio']:.1f}x Avg Volume</div>
+                        <div style="font-size:11px;font-weight:700;color:{dir_color};margin-top:2px;">
+                            {dir_arrow} ${main_chg:,.0f} move ({main_pct:.1f}%)
+                        </div>
+                        <div style="font-size:9px;color:#6b7a99;margin-top:2px;">{spike['vol_ratio']:.1f}x Vol{(' · ' + trigger_text) if trigger_text else ''}</div>
                     </div>
                 </div>
                 <div style="margin-top:10px;font-size:10px;color:#a8b2c8;line-height:1.8;display:flex;flex-direction:column;gap:4px;">
