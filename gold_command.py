@@ -858,6 +858,11 @@ def fetch_gold_news():
         'should you buy', 'is gold a good investment', 'fxempire',
         'daily horoscope', 'astrology', 'crypto airdrop',
         'top picks', 'best stocks', 'buy now', 'price will',
+        'what is the price of', 'how much is gold', 'gold price today:',
+        'chart and why it matters', 'what time is today',
+        'here\'s what you need to know', 'things to know',
+        'what investors should know', 'complete guide',
+        'explained:', 'vs.', 'quiz', 'opinion:', 'editorial:',
     ]
 
     # Verified sources — only trust established financial/news outlets
@@ -1580,60 +1585,95 @@ def get_instrument_icon(name):
 
 
 def get_session_clock_html():
-    """Generate a session clock bar showing active forex sessions, overlaps, and multi-timezone clocks."""
+    """Generate a session clock bar with 12hr format, session status, overlap, and countdown."""
     from datetime import timezone, timedelta
     now_utc = datetime.now(timezone.utc)
     h = now_utc.hour
+    m = now_utc.minute
 
-    # Timezone clocks
-    utc_str = now_utc.strftime('%H:%M')
-    est = now_utc + timedelta(hours=-5)  # US Eastern (ET) — approximate
-    gst = now_utc + timedelta(hours=4)   # Gulf Standard Time (Dubai)
+    # 12-hour timezone clocks
+    def fmt12(dt):
+        return dt.strftime('%I:%M %p').lstrip('0')
+
+    est = now_utc + timedelta(hours=-5)   # US Eastern
+    gst = now_utc + timedelta(hours=4)    # Gulf Standard Time (Dubai)
     ist = now_utc + timedelta(hours=5, minutes=30)  # India Standard Time
-    est_str = est.strftime('%H:%M')
-    gst_str = gst.strftime('%H:%M')
-    ist_str = ist.strftime('%H:%M')
 
-    # Session windows (UTC hours)
+    # Session windows (UTC hours) and close times
     # Asia/Tokyo: 00:00–09:00 UTC
     # London:     07:00–16:00 UTC
     # New York:   12:00–21:00 UTC
-    asia_active = 0 <= h < 9
-    london_active = 7 <= h < 16
-    ny_active = 12 <= h < 21
+    sessions = {
+        'Asia': {'start': 0, 'end': 9, 'local_tz': 'JST', 'local_offset': 9},
+        'London': {'start': 7, 'end': 16, 'local_tz': 'GMT', 'local_offset': 0},
+        'New York': {'start': 12, 'end': 21, 'local_tz': 'ET', 'local_offset': -5},
+    }
+
+    asia_active = sessions['Asia']['start'] <= h < sessions['Asia']['end']
+    london_active = sessions['London']['start'] <= h < sessions['London']['end']
+    ny_active = sessions['New York']['start'] <= h < sessions['New York']['end']
 
     # Overlaps
-    asia_london_overlap = asia_active and london_active   # 07:00–09:00 UTC
-    london_ny_overlap = london_active and ny_active       # 12:00–16:00 UTC
+    asia_london_overlap = asia_active and london_active
+    london_ny_overlap = london_active and ny_active
 
-    # Build session badges
-    badges = []
-    if asia_london_overlap:
-        badges.append('<span class="session-badge overlap">Asia–London Overlap</span>')
-    elif london_ny_overlap:
-        badges.append('<span class="session-badge overlap">London–NY Overlap</span>')
+    # Countdown helper: minutes until a UTC hour
+    def countdown_to(target_hour):
+        mins_left = (target_hour - h - 1) * 60 + (60 - m)
+        if mins_left < 0:
+            mins_left += 24 * 60
+        hrs = mins_left // 60
+        mins = mins_left % 60
+        if hrs > 0:
+            return f"{hrs}h {mins}m"
+        return f"{mins}m"
 
-    for name, active in [("Tokyo", asia_active), ("London", london_active), ("New York", ny_active)]:
-        cls = "active" if active else "inactive"
-        dot = "●" if active else "○"
-        badges.append(f'<span class="session-badge {cls}">{dot} {name}</span>')
-
-    # Weekend / market closed check
     weekday = now_utc.weekday()
-    if weekday >= 5:  # Saturday=5, Sunday=6
-        badges = ['<span class="session-badge inactive">Market Closed — Weekend</span>']
+    is_weekend = weekday >= 5
 
-    badges_html = "".join(badges)
+    # Build session status rows
+    session_rows = ""
+    if is_weekend:
+        session_rows = ('<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">'
+                        '<span class="session-badge inactive">Market Closed — Weekend</span>'
+                        '</div>')
+    else:
+        for s_name, s_info in sessions.items():
+            active = s_info['start'] <= h < s_info['end']
+            if active:
+                closes_in = countdown_to(s_info['end'])
+                local_time = now_utc + timedelta(hours=s_info['local_offset'])
+                session_rows += (f'<div style="display:flex;align-items:center;gap:8px;padding:4px 0;">'
+                                 f'<span class="session-badge active">● {s_name}</span>'
+                                 f'<span style="font-size:9px;color:#a8b2c8;">Closes in <b style="color:#f0b90b;">{closes_in}</b></span>'
+                                 f'<span style="font-size:9px;color:#5a6a8a;">({fmt12(local_time)} {s_info["local_tz"]})</span>'
+                                 f'</div>')
+            else:
+                opens_in = countdown_to(s_info['start'])
+                session_rows += (f'<div style="display:flex;align-items:center;gap:8px;padding:4px 0;">'
+                                 f'<span class="session-badge inactive">○ {s_name}</span>'
+                                 f'<span style="font-size:9px;color:#5a6a8a;">Opens in {opens_in}</span>'
+                                 f'</div>')
+
+        # Overlap badge
+        if asia_london_overlap:
+            session_rows += ('<div style="padding:4px 0;">'
+                             '<span class="session-badge overlap">Asia–London Overlap Active</span>'
+                             '</div>')
+        elif london_ny_overlap:
+            session_rows += ('<div style="padding:4px 0;">'
+                             '<span class="session-badge overlap">London–NY Overlap Active (Peak Volatility)</span>'
+                             '</div>')
 
     return (
         f'<div class="session-clock">'
         f'<div class="session-clock-times">'
-        f'<div class="session-clock-zone"><div class="tz-label">UTC</div><div class="tz-time">{utc_str}</div></div>'
-        f'<div class="session-clock-zone"><div class="tz-label">US Eastern</div><div class="tz-time">{est_str}</div></div>'
-        f'<div class="session-clock-zone"><div class="tz-label">GST (Dubai)</div><div class="tz-time">{gst_str}</div></div>'
-        f'<div class="session-clock-zone"><div class="tz-label">IST (India)</div><div class="tz-time">{ist_str}</div></div>'
+        f'<div class="session-clock-zone"><div class="tz-label">New York</div><div class="tz-time">{fmt12(est)}</div></div>'
+        f'<div class="session-clock-zone"><div class="tz-label">London</div><div class="tz-time">{fmt12(now_utc)}</div></div>'
+        f'<div class="session-clock-zone"><div class="tz-label">Dubai</div><div class="tz-time">{fmt12(gst)}</div></div>'
+        f'<div class="session-clock-zone"><div class="tz-label">India</div><div class="tz-time">{fmt12(ist)}</div></div>'
         f'</div>'
-        f'<div class="session-badges">{badges_html}</div>'
+        f'<div style="display:flex;flex-direction:column;gap:2px;">{session_rows}</div>'
         f'</div>'
     )
 
@@ -1670,11 +1710,16 @@ def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, 
         why = d[3] if len(d) > 3 else ""
         card_class = "bullish" if impact == "BULLISH" else "bearish" if impact == "BEARISH" else "neutral"
         chg_color = "#10b981" if impact == "BULLISH" else "#ef4444" if impact == "BEARISH" else "#5a6a8a"
+        # Show gold-specific impact label with arrow
+        gold_arrow = "↑" if impact == "BULLISH" else "↓" if impact == "BEARISH" else "→"
+        gold_label = f"Gold {gold_arrow}" if impact != "NEUTRAL" else "Neutral for Gold"
+        why_text = f'<div style="font-size:8px;color:#6b7a99;margin-top:2px;">{html_escape(why[:40])}</div>' if why else ""
         driver_cards_html += (
             f'<div class="driver-card {card_class}">'
             f'<div class="dc-name">{name}</div>'
             f'<div class="dc-value">{detail}</div>'
-            f'<div class="dc-change" style="color:{chg_color};">{impact}</div>'
+            f'<div class="dc-change" style="color:{chg_color};">{gold_label}</div>'
+            f'{why_text}'
             f'</div>'
         )
     driver_cards_html += '</div>'
@@ -2673,38 +2718,46 @@ def main():
                         article['_impact'] = 'LOW'
                         low_news.append(article)
 
-                # Directional impact rules for chips
-                _impact_rules = {
-                    'geopolitical': {
-                        'keywords': ['war', 'attack', 'strike', 'nuclear', 'bomb', 'missile', 'invasion', 'crisis', 'sanctions', 'conflict', 'tariff', 'trade war'],
-                        'impacts': [('Gold', '↑', '#10b981'), ('Stocks', '↓', '#ef4444'), ('VIX', '↑', '#f59e0b')],
-                    },
-                    'gold': {'keywords': ['gold', 'xau', 'bullion', 'precious metal', 'safe haven'], 'chip': ('Gold', '#f0b90b')},
-                    'dollar': {'keywords': ['dollar', 'usd', 'dxy', 'fed', 'federal reserve', 'interest rate', 'fomc', 'powell'], 'chip': ('USD', '#10b981')},
-                    'oil': {'keywords': ['oil', 'crude', 'opec', 'brent', 'wti'], 'chip': ('Oil', '#8b5cf6')},
-                    'bonds': {'keywords': ['bond', 'yield', 'treasury', '10-year', '10y'], 'chip': ('Bonds', '#3b82f6')},
-                }
+                # Category detection for single unified gold-impact chip
+                _cat_rules = [
+                    ('Geopolitical', ['war', 'attack', 'strike', 'nuclear', 'bomb', 'missile', 'invasion', 'crisis', 'sanctions', 'conflict'], 'BULLISH', '#ef4444'),
+                    ('Fed / Rates', ['fed', 'fomc', 'powell', 'rate cut', 'rate hike', 'interest rate', 'federal reserve'], None, '#3b82f6'),
+                    ('Inflation', ['inflation', 'cpi', 'pce', 'consumer price'], None, '#f59e0b'),
+                    ('USD / DXY', ['dollar', 'usd', 'dxy'], None, '#10b981'),
+                    ('Oil / Energy', ['oil', 'crude', 'opec', 'brent', 'wti'], None, '#8b5cf6'),
+                    ('Bonds / Yields', ['bond', 'yield', 'treasury', '10-year', '10y'], None, '#3b82f6'),
+                    ('Gold', ['gold', 'xau', 'bullion', 'precious metal', 'safe haven', 'gold reserve'], None, '#f0b90b'),
+                    ('Tariffs / Trade', ['tariff', 'trade war', 'trade deal'], 'BULLISH', '#f59e0b'),
+                ]
 
                 def render_news_article(article):
                     date_str = article['published'].strftime('%b %d, %H:%M') if article['published'] else ""
                     source = f" — {article['source']}" if article['source'] else ""
                     title_lower = article['title'].lower()
-                    is_breaking = any(kw in title_lower for kw in ['war', 'attack', 'strike', 'nuclear', 'missile', 'breaking', 'crisis'])
+                    is_breaking = any(kw in title_lower for kw in ['war', 'attack', 'strike', 'nuclear', 'missile', 'crisis'])
 
-                    # Build impact chips
+                    # Build chips: one per matched category + one unified gold impact
+                    matched_cats = []
+                    gold_impact = None  # Will be set to BULLISH or BEARISH for gold
+                    for cat_name, keywords, default_gold, cat_color in _cat_rules:
+                        if any(kw in title_lower for kw in keywords):
+                            matched_cats.append((cat_name, cat_color))
+                            if default_gold and not gold_impact:
+                                gold_impact = default_gold
+
+                    # Build category chip(s) — max 2 to avoid clutter
                     impact_chips = ""
-                    for cat_key, rule in _impact_rules.items():
-                        if any(kw in title_lower for kw in rule['keywords']):
-                            if 'impacts' in rule:
-                                for instr, direction, dcolor in rule['impacts']:
-                                    impact_chips += (f'<span style="font-size:9px;padding:2px 6px;border-radius:3px;'
-                                                     f'background:{dcolor}15;color:{dcolor};font-weight:700;">'
-                                                     f'{instr} {direction}</span> ')
-                            elif 'chip' in rule:
-                                c_name, c_color = rule['chip']
-                                impact_chips += (f'<span style="font-size:9px;padding:2px 6px;border-radius:3px;'
-                                                 f'background:{c_color}15;color:{c_color};font-weight:700;">'
-                                                 f'{c_name}</span> ')
+                    for cat_name, cat_color in matched_cats[:2]:
+                        impact_chips += (f'<span style="font-size:9px;padding:2px 6px;border-radius:3px;'
+                                         f'background:{cat_color}15;color:{cat_color};font-weight:700;">'
+                                         f'{cat_name}</span> ')
+                    # Add single gold impact chip if applicable
+                    if gold_impact:
+                        g_arrow = "↑" if gold_impact == "BULLISH" else "↓"
+                        g_color = "#10b981" if gold_impact == "BULLISH" else "#ef4444"
+                        impact_chips += (f'<span style="font-size:9px;padding:2px 6px;border-radius:3px;'
+                                         f'background:{g_color}15;color:{g_color};font-weight:700;">'
+                                         f'Gold {g_arrow}</span> ')
 
                     breaking_class = ' rss-breaking' if is_breaking else ''
                     prefix = '<span style="color:#ef4444;font-weight:700;font-size:10px;">&#9889; BREAKING </span>' if is_breaking else ''
