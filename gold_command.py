@@ -519,10 +519,62 @@ header {visibility: hidden;}
     padding: 3px 10px;
     border-radius: 6px;
 }
+/* ─── Brief Macro Driver Chips ─── */
+.brief-drivers-row {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    margin-bottom: 12px;
+}
+.brief-driver-chip {
+    display: flex; align-items: center; gap: 6px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 11px;
+}
+.brief-driver-chip .driver-name {
+    color: #a8b2c8; font-weight: 600;
+}
+.brief-driver-chip .driver-detail {
+    color: #6b7a99; font-size: 10px;
+}
+.brief-driver-chip .driver-tag {
+    font-size: 8px; font-weight: 800; padding: 1px 6px;
+    border-radius: 3px; letter-spacing: 0.5px;
+}
+/* ─── Brief Events Row ─── */
+.brief-events-row {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    margin-bottom: 12px;
+    padding: 8px 10px;
+    background: rgba(239,68,68,0.04);
+    border: 1px solid rgba(239,68,68,0.08);
+    border-radius: 8px;
+}
+.brief-events-label {
+    font-size: 9px; font-weight: 800; color: #ef4444;
+    text-transform: uppercase; letter-spacing: 1px;
+    display: flex; align-items: center; gap: 4px;
+    width: 100%; margin-bottom: 2px;
+}
+.brief-event-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10px; padding: 3px 8px; border-radius: 4px;
+    font-weight: 600;
+}
+.brief-event-chip.high { background: rgba(239,68,68,0.1); color: #ef4444; border: 1px solid rgba(239,68,68,0.15); }
+.brief-event-chip.medium { background: rgba(245,158,11,0.1); color: #f59e0b; border: 1px solid rgba(245,158,11,0.15); }
+.brief-event-chip.low { background: rgba(107,122,153,0.08); color: #8892ab; border: 1px solid rgba(107,122,153,0.1); }
+/* ─── Brief Trend Summary ─── */
 .brief-trend-line {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
     font-size: 11px;
     color: #8892ab;
-    margin-bottom: 14px;
+    margin-bottom: 12px;
+}
+.brief-trend-badge {
+    font-size: 10px; font-weight: 800; padding: 3px 10px;
+    border-radius: 5px; letter-spacing: 0.5px;
 }
 .brief-trend-line b { color: #c8d0e4 !important; }
 @media (max-width: 768px) {
@@ -1581,13 +1633,13 @@ def get_instrument_icon(name):
     return icons.get(name, icons.get(_aliases.get(name, ''), ''))
 
 
-def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, trade_signals, signal_trend, ranges, pivots, key_levels):
+def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, trade_signals, signal_trend, ranges, pivots, key_levels, econ_events=None):
     """Generate a structured daily brief with visual blocks for the dashboard."""
     # Direction
     is_up = daily_chg >= 0
     chg_color = "#10b981" if is_up else "#ef4444"
     chg_bg = "rgba(16,185,129,0.1)" if is_up else "rgba(239,68,68,0.1)"
-    arrow = "▲" if is_up else "▼"
+    arrow = "&#9650;" if is_up else "&#9660;"
 
     # Session bias from drivers
     bull_count = sum(1 for d in drivers if d[2] == "BULLISH")
@@ -1596,74 +1648,100 @@ def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, 
         bias = "BULLISH"
         bias_color = "#10b981"
         bias_bg = "rgba(16,185,129,0.12)"
-        trend_word = "bullish"
     elif bear_count > bull_count + 1:
         bias = "BEARISH"
         bias_color = "#ef4444"
         bias_bg = "rgba(239,68,68,0.12)"
-        trend_word = "bearish"
     else:
         bias = "NEUTRAL"
         bias_color = "#f59e0b"
         bias_bg = "rgba(245,158,11,0.12)"
-        trend_word = "mixed"
 
-    # Key drivers
-    key_drivers_parts = []
+    # ── Macro Driver Chips (boxed) ──
+    drivers_chips_html = '<div class="brief-drivers-row">'
     for d in drivers:
         name, detail, impact = d[0], d[1], d[2]
-        if impact != "NEUTRAL":
-            d_icon = "🟢" if impact == "BULLISH" else "🔴"
-            key_drivers_parts.append(f'{d_icon} {name} <span class="muted">({detail})</span>')
-    drivers_html = " &nbsp;·&nbsp; ".join(key_drivers_parts[:4]) if key_drivers_parts else '<span class="muted">No strong macro catalysts</span>'
+        if impact == "BULLISH":
+            tag_color, tag_bg, tag_label = "#10b981", "rgba(16,185,129,0.12)", "BULLISH"
+            border = "rgba(16,185,129,0.15)"
+        elif impact == "BEARISH":
+            tag_color, tag_bg, tag_label = "#ef4444", "rgba(239,68,68,0.12)", "BEARISH"
+            border = "rgba(239,68,68,0.15)"
+        else:
+            continue  # Skip neutral drivers
+        drivers_chips_html += (
+            f'<div class="brief-driver-chip" style="border-color:{border};">'
+            f'<div><span class="driver-name">{name}</span><br>'
+            f'<span class="driver-detail">{detail}</span></div>'
+            f'<span class="driver-tag" style="background:{tag_bg};color:{tag_color};">{tag_label}</span>'
+            f'</div>'
+        )
+    drivers_chips_html += '</div>'
 
-    # RSI block
+    # ── Today's Key Events ──
+    events_html = ""
+    if econ_events:
+        today_str = datetime.utcnow().strftime('%Y-%m-%d')
+        today_events = [e for e in econ_events if today_str in str(e.get('date', ''))]
+        if not today_events:
+            # Show upcoming events if none today
+            today_events = econ_events[:5]
+        if today_events:
+            events_html = '<div class="brief-events-row">'
+            events_html += '<div class="brief-events-label">&#128197; Key Events Today</div>'
+            for evt in today_events[:6]:
+                impact_lvl = evt.get('impact', 'LOW').lower()
+                evt_title = evt.get('title', '')[:50]
+                events_html += f'<span class="brief-event-chip {impact_lvl}">{evt_title}</span>'
+            events_html += '</div>'
+
+    # ── RSI block ──
     if rsi < 30:
-        rsi_label, rsi_color, rsi_icon = "OVERSOLD", "#ef4444", "🔻"
+        rsi_label, rsi_color, rsi_icon = "OVERSOLD", "#ef4444", "&#128315;"
         rsi_note = "Bounce potential — watch for reversal patterns"
     elif rsi > 70:
-        rsi_label, rsi_color, rsi_icon = "OVERBOUGHT", "#10b981", "🔺"
+        rsi_label, rsi_color, rsi_icon = "OVERBOUGHT", "#10b981", "&#128314;"
         rsi_note = "Pullback risk — momentum stretched"
     elif rsi < 40:
-        rsi_label, rsi_color, rsi_icon = "WEAK", "#f59e0b", "📉"
+        rsi_label, rsi_color, rsi_icon = "WEAK", "#f59e0b", "&#128201;"
         rsi_note = "Below neutral — bears in control"
     elif rsi > 60:
-        rsi_label, rsi_color, rsi_icon = "STRONG", "#10b981", "📈"
+        rsi_label, rsi_color, rsi_icon = "STRONG", "#10b981", "&#128200;"
         rsi_note = "Above neutral — bulls in control"
     else:
-        rsi_label, rsi_color, rsi_icon = "NEUTRAL", "#8892ab", "⚖️"
+        rsi_label, rsi_color, rsi_icon = "NEUTRAL", "#8892ab", "&#9878;"
         rsi_note = "Balanced momentum — no edge"
 
-    # Range utilization block
+    # ── Range utilization block ──
     daily_util = ranges['today']['util']
     if daily_util > 100:
-        range_icon, range_status, range_color = "🔥", "EXCEEDED", "#ef4444"
+        range_icon, range_status, range_color = "&#128293;", "EXCEEDED", "#ef4444"
         range_note = f"{daily_util:.0f}% of ATR used — extended"
     elif daily_util > 70:
-        range_icon, range_status, range_color = "⚡", "NEAR LIMIT", "#f59e0b"
+        range_icon, range_status, range_color = "&#9889;", "NEAR LIMIT", "#f59e0b"
         range_note = f"{daily_util:.0f}% of ATR used — nearing cap"
     else:
-        range_icon, range_status, range_color = "📊", "ROOM TO RUN", "#10b981"
+        range_icon, range_status, range_color = "&#128202;", "ROOM TO RUN", "#10b981"
         range_note = f"{daily_util:.0f}% of ATR used — expansion likely"
 
-    # Signal block
+    # ── Signal block ──
     if trade_signals:
         top_sig = trade_signals[0]
         sig_dir = top_sig["direction"]
-        sig_icon = "🟢" if sig_dir == "LONG" else "🔴"
+        sig_icon = "&#128994;" if sig_dir == "LONG" else "&#128308;"
         sig_color = "#10b981" if sig_dir == "LONG" else "#ef4444"
-        sig_value = f'{sig_dir} · {top_sig["confidence"]} · Score {top_sig["score"]}'
+        sig_value = f'{sig_dir} &middot; {top_sig["confidence"]} &middot; Score {top_sig["score"]}'
         sig_note = f'{top_sig["pattern_name"]} at ${top_sig["level_price"]:,.0f}'
     else:
-        sig_icon, sig_color = "🔍", "#6b7a99"
+        sig_icon, sig_color = "&#128269;", "#6b7a99"
         sig_value = "Scanning..."
         sig_note = "No active setups — watching key levels"
 
-    # Key levels block
+    # ── Key levels ──
     nearest_support = pivots['S1']
     nearest_resistance = pivots['R1']
 
-    # Trend label
+    # ── Trend label ──
     trend_display = signal_trend.replace("_", " ").title()
     trend_color = "#10b981" if "BULL" in signal_trend else "#ef4444" if "BEAR" in signal_trend else "#f59e0b"
 
@@ -1675,12 +1753,16 @@ def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, 
         f'<span class="brief-price-change" style="color:{chg_color};background:{chg_bg};">'
         f'{arrow} ${abs(daily_chg):,.2f} ({daily_pct:+.2f}%)</span>'
         f'</div>'
-        # Trend + macro summary line
+        # Trend + bias badges
         f'<div class="brief-trend-line">'
-        f'Daily trend: <b style="color:{trend_color};">{trend_display}</b>'
-        f' &nbsp;·&nbsp; Macro bias: <b style="color:{bias_color};">{bias}</b>'
-        f' &nbsp;·&nbsp; {drivers_html}'
+        f'<span class="brief-trend-badge" style="background:{trend_color}15;color:{trend_color};border:1px solid {trend_color}25;">&#9654; {trend_display}</span>'
+        f'<span class="brief-trend-badge" style="background:{bias_bg};color:{bias_color};border:1px solid {bias_color}25;">Macro: {bias}</span>'
+        f'<span style="color:#5a6a8a;font-size:10px;">{bull_count} bullish · {bear_count} bearish drivers</span>'
         f'</div>'
+        # Macro driver chips (boxed)
+        f'{drivers_chips_html}'
+        # Today's key events
+        f'{events_html}'
         # 4-block grid
         f'<div class="brief-grid">'
         # Block 1: RSI
@@ -1713,14 +1795,14 @@ def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, 
         f'</div></div>'
         # Block 4: Key Levels
         f'<div class="brief-block">'
-        f'<div class="brief-block-icon" style="background:rgba(107,122,153,0.08);">🎯</div>'
+        f'<div class="brief-block-icon" style="background:rgba(107,122,153,0.08);">&#127919;</div>'
         f'<div class="brief-block-content">'
         f'<div class="brief-block-label">Key Levels</div>'
         f'<div class="brief-block-value">'
-        f'<span class="up">▲ ${nearest_resistance:,.0f}</span>'
-        f' &nbsp;·&nbsp; '
-        f'<span class="down">▼ ${nearest_support:,.0f}</span></div>'
-        f'<div class="brief-block-value muted">Fibonacci pivot resistance · support</div>'
+        f'<span class="up">&#9650; ${nearest_resistance:,.0f}</span>'
+        f' &nbsp;&middot;&nbsp; '
+        f'<span class="down">&#9660; ${nearest_support:,.0f}</span></div>'
+        f'<div class="brief-block-value muted">Fibonacci pivot resistance &middot; support</div>'
         f'</div></div>'
         f'</div>'
     )
@@ -1987,7 +2069,7 @@ def main():
     brief_text, brief_bias, brief_bias_color, brief_bias_bg = generate_daily_brief_text(
         current, daily_chg, daily_pct, rsi_val,
         gold_df['ATR_14'].iloc[-1], drivers, trade_signals,
-        signal_trend, ranges, pivots, key_levels
+        signal_trend, ranges, pivots, key_levels, econ_events=econ_events
     )
 
     brief_date = datetime.utcnow().strftime('%B %d, %Y')
