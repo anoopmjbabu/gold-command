@@ -2112,7 +2112,9 @@ def main():
         <div>
             <h1 style="margin:0;">GOLD COMMAND</h1>
             <span class="sub">XAU/USD Market Intelligence Terminal</span>
-            <div style="font-size:9px;color:#5a6a8a;margin-top:3px;letter-spacing:0.5px;">Developed by <span style="color:#f0b90b;">Capt. Gold</span></div>
+            <div style="font-size:9px;color:#5a6a8a;margin-top:3px;letter-spacing:0.5px;">by <span style="color:#f0b90b;">Capt. Gold</span>
+                &nbsp;·&nbsp; <a href="https://t.me/capt_gold" target="_blank" style="color:#3b82f6;text-decoration:none;font-weight:600;">✈ Telegram</a>
+            </div>
         </div>
         <div style="display:flex; align-items:center; gap:16px;">
             <span class="live-badge"><span class="live-dot"></span>LIVE DATA</span>
@@ -2184,6 +2186,10 @@ def main():
                 $19.99<span style="font-size:9px;color:#6b7a99;font-weight:400;">/month</span>
             </div>
             <div style="font-size:8px;color:#5a6a8a;">7-day free trial · Cancel anytime</div>
+            <a href="https://t.me/capt_gold" target="_blank" style="display:inline-block;margin-top:10px;
+                background:rgba(59,130,246,0.1);color:#3b82f6;border:1px solid rgba(59,130,246,0.2);
+                border-radius:8px;padding:8px 16px;font-size:10px;font-weight:700;text-decoration:none;
+                letter-spacing:0.5px;">✈ Join Telegram Channel</a>
         </div>""", unsafe_allow_html=True)
 
         # What's included in free vs pro
@@ -3230,18 +3236,22 @@ def main():
     <div style="text-align:center;padding:20px 0;">
         <div style="font-size:12px;font-weight:900;color:#f0b90b;letter-spacing:3px;margin-bottom:6px;">GOLD COMMAND</div>
         <div style="font-size:10px;color:#8a94a8;margin-bottom:6px;">XAU/USD Market Intelligence Terminal&nbsp;&nbsp;·&nbsp;&nbsp;v2.0</div>
-        <div style="font-size:9px;color:#5a6a8a;margin-bottom:8px;">Developed by <span style="color:#f0b90b;font-weight:600;">Capt. Gold</span></div>
+        <div style="font-size:9px;color:#5a6a8a;margin-bottom:8px;">by <span style="color:#f0b90b;font-weight:600;">Capt. Gold</span></div>
+        <div style="display:flex;justify-content:center;gap:16px;margin-bottom:10px;">
+            <a href="https://t.me/capt_gold" target="_blank"
+               style="font-size:9px;color:#3b82f6;text-decoration:none;font-weight:600;">
+                ✈ Telegram
+            </a>
+            <a href="https://icmarkets.com/?camp=87951" target="_blank"
+               style="font-size:9px;color:#60a5fa;text-decoration:none;font-weight:600;">
+                Trade on ICMarkets →
+            </a>
+        </div>
         <div style="display:flex;justify-content:center;gap:20px;margin-bottom:8px;">
             <span style="font-size:8px;color:#3d4b6b;">📊 6 Intelligence Modules</span>
             <span style="font-size:8px;color:#3d4b6b;">🎯 Multi-TF Signal Engine</span>
             <span style="font-size:8px;color:#3d4b6b;">🧠 Auto-Computed Macro Analysis</span>
             <span style="font-size:8px;color:#3d4b6b;">📰 Live RSS News Feed</span>
-        </div>
-        <div style="margin-bottom:8px;">
-            <a href="https://icmarkets.com/?camp=87951" target="_blank"
-               style="font-size:9px;color:#60a5fa;text-decoration:none;font-weight:600;">
-                Trade XAU/USD on ICMarkets →
-            </a>
         </div>
         <div style="font-size:8px;color:#3d4b6b;letter-spacing:0.5px;">
             Data: Yahoo Finance, Google News RSS&nbsp;&nbsp;|&nbsp;&nbsp;Charts: TradingView&nbsp;&nbsp;|&nbsp;&nbsp;Signals: Proprietary Engine<br>
