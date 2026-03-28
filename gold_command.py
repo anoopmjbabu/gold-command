@@ -1654,6 +1654,280 @@ def render_sentiment_html(sentiment):
     </div>"""
 
 
+# ═══════════════════════════════════════════════════════════════
+# NEW: MULTI-TIMEFRAME RSI + FIBONACCI LEVELS
+# ═══════════════════════════════════════════════════════════════
+def _compute_rsi(series, period=14):
+    """Compute RSI from a price series using Wilder's smoothing."""
+    delta = series.diff()
+    gain = delta.where(delta > 0, 0)
+    loss = (-delta.where(delta < 0, 0))
+    avg_gain = gain.ewm(alpha=1.0/period, min_periods=period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1.0/period, min_periods=period, adjust=False).mean()
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    rsi = (100 - (100 / (1 + rs))).fillna(50)
+    return rsi
+
+
+def _compute_fib_levels(high, low):
+    """Compute Fibonacci retracement levels from a swing high and low."""
+    diff = high - low
+    return {
+        '0.0% (High)': high,
+        '23.6%': high - 0.236 * diff,
+        '38.2%': high - 0.382 * diff,
+        '50.0%': high - 0.500 * diff,
+        '61.8%': high - 0.618 * diff,
+        '78.6%': high - 0.786 * diff,
+        '100.0% (Low)': low,
+    }
+
+
+@st.cache_data(ttl=300)
+def fetch_multi_tf_data(symbol="GC=F"):
+    """Fetch OHLCV data across 8 timeframes for RSI and Fibonacci calculation.
+    Returns dict of {tf_label: DataFrame}.
+    yfinance limits: intraday data up to 60 days for 15m+, 7 days for 1m.
+    """
+    timeframes = [
+        ("Monthly", "5y", "1mo"),
+        ("Weekly", "2y", "1wk"),
+        ("Daily", "6mo", "1d"),
+        ("4H", "60d", "1h"),      # Resample 1h → 4h
+        ("1H", "30d", "1h"),
+        ("30min", "30d", "30m"),
+        ("15min", "60d", "15m"),
+        ("5min", "5d", "5m"),
+    ]
+
+    data = {}
+    for label, period, interval in timeframes:
+        try:
+            t = yf.Ticker(symbol)
+            df = t.history(period=period, interval=interval)
+            if df.index.tz:
+                df.index = df.index.tz_localize(None)
+            if len(df) < 15:
+                continue
+
+            # Resample 1h to 4h
+            if label == "4H":
+                df = df.resample('4h').agg({
+                    'Open': 'first', 'High': 'max', 'Low': 'min',
+                    'Close': 'last', 'Volume': 'sum'
+                }).dropna()
+                if len(df) < 15:
+                    continue
+
+            data[label] = df
+        except Exception as e:
+            logger.warning(f"MTF fetch failed for {label} ({period}/{interval}): {e}")
+            continue
+
+    return data
+
+
+def compute_multi_tf_rsi(mtf_data):
+    """Compute RSI(14) for each timeframe. Returns list of (label, rsi_value, trend_word)."""
+    results = []
+    tf_order = ["Monthly", "Weekly", "Daily", "4H", "1H", "30min", "15min", "5min"]
+
+    for label in tf_order:
+        if label not in mtf_data or mtf_data[label].empty:
+            results.append((label, None, "N/A"))
+            continue
+        df = mtf_data[label]
+        rsi_series = _compute_rsi(df['Close'], 14)
+        rsi_val = rsi_series.iloc[-1]
+
+        if rsi_val > 70:
+            trend = "OVERBOUGHT"
+        elif rsi_val > 60:
+            trend = "BULLISH"
+        elif rsi_val > 40:
+            trend = "NEUTRAL"
+        elif rsi_val > 30:
+            trend = "BEARISH"
+        else:
+            trend = "OVERSOLD"
+
+        results.append((label, rsi_val, trend))
+
+    return results
+
+
+def compute_multi_tf_fib(mtf_data):
+    """Compute Fibonacci retracement levels for each timeframe using period high/low.
+    Returns list of (label, fib_dict, current_price, nearest_level_name).
+    """
+    results = []
+    tf_order = ["Monthly", "Weekly", "Daily", "4H", "1H", "30min", "15min", "5min"]
+
+    for label in tf_order:
+        if label not in mtf_data or mtf_data[label].empty:
+            continue
+        df = mtf_data[label]
+        # Use full period swing high/low
+        period_high = df['High'].max()
+        period_low = df['Low'].min()
+        current = df['Close'].iloc[-1]
+
+        if period_high == period_low:
+            continue
+
+        fibs = _compute_fib_levels(period_high, period_low)
+
+        # Find nearest Fib level
+        nearest_name = ""
+        nearest_dist = float('inf')
+        for name, level in fibs.items():
+            dist = abs(current - level)
+            if dist < nearest_dist:
+                nearest_dist = dist
+                nearest_name = name
+
+        results.append((label, fibs, current, nearest_name))
+
+    return results
+
+
+def render_mtf_rsi_html(rsi_data):
+    """Render multi-timeframe RSI as a heatmap table."""
+    if not rsi_data:
+        return '<div style="color:#5a6a8a;font-size:12px;">Multi-TF RSI unavailable</div>'
+
+    rows = ""
+    for label, rsi_val, trend in rsi_data:
+        if rsi_val is None:
+            rows += f"""<tr>
+                <td style="padding:5px 8px;font-size:11px;color:#94a3b8;border-bottom:1px solid #1e274533;">{label}</td>
+                <td style="padding:5px 8px;text-align:center;color:#3d4b6b;font-size:11px;border-bottom:1px solid #1e274533;">—</td>
+                <td style="padding:5px 8px;text-align:center;color:#3d4b6b;font-size:10px;border-bottom:1px solid #1e274533;">N/A</td>
+                <td style="padding:5px 8px;border-bottom:1px solid #1e274533;"><div style="height:6px;background:#1e2745;border-radius:3px;"></div></td>
+            </tr>"""
+            continue
+
+        # Color and bar
+        if rsi_val > 70:
+            color, bg = "#ef4444", "rgba(239,68,68,0.15)"
+        elif rsi_val > 60:
+            color, bg = "#10b981", "rgba(16,185,129,0.12)"
+        elif rsi_val > 40:
+            color, bg = "#f59e0b", "rgba(245,158,11,0.1)"
+        elif rsi_val > 30:
+            color, bg = "#f97316", "rgba(249,115,22,0.12)"
+        else:
+            color, bg = "#ef4444", "rgba(239,68,68,0.15)"
+
+        bar_width = rsi_val
+        # Highlight extreme zones
+        trend_badge = ""
+        if trend in ("OVERBOUGHT", "OVERSOLD"):
+            trend_badge = f'<span style="font-size:8px;font-weight:700;color:{color};background:{bg};padding:1px 4px;border-radius:3px;margin-left:4px;">⚠️</span>'
+
+        rows += f"""<tr style="background:{bg if trend in ('OVERBOUGHT','OVERSOLD') else 'transparent'};">
+            <td style="padding:5px 8px;font-size:11px;font-weight:600;color:#e2e8f0;border-bottom:1px solid #1e274533;white-space:nowrap;">{label}</td>
+            <td style="padding:5px 8px;text-align:center;font-family:JetBrains Mono;font-size:12px;font-weight:700;color:{color};border-bottom:1px solid #1e274533;">{rsi_val:.1f}</td>
+            <td style="padding:5px 8px;text-align:center;font-size:10px;color:{color};border-bottom:1px solid #1e274533;white-space:nowrap;">{trend}{trend_badge}</td>
+            <td style="padding:5px 8px;border-bottom:1px solid #1e274533;width:40%;">
+                <div style="height:6px;background:#1e2745;border-radius:3px;overflow:hidden;position:relative;">
+                    <div style="width:{bar_width:.0f}%;height:100%;background:{color};border-radius:3px;"></div>
+                    <div style="position:absolute;left:30%;top:0;width:1px;height:100%;background:#ffffff22;"></div>
+                    <div style="position:absolute;left:70%;top:0;width:1px;height:100%;background:#ffffff22;"></div>
+                </div>
+            </td>
+        </tr>"""
+
+    # Confluence detection: count how many TFs agree
+    bullish_tfs = sum(1 for _, v, t in rsi_data if v is not None and v > 50)
+    bearish_tfs = sum(1 for _, v, t in rsi_data if v is not None and v < 50)
+    total_valid = sum(1 for _, v, _ in rsi_data if v is not None)
+
+    if total_valid > 0:
+        if bullish_tfs >= total_valid * 0.75:
+            confluence = f'<span style="color:#10b981;font-weight:700;">BULLISH CONFLUENCE</span> — {bullish_tfs}/{total_valid} timeframes above 50'
+        elif bearish_tfs >= total_valid * 0.75:
+            confluence = f'<span style="color:#ef4444;font-weight:700;">BEARISH CONFLUENCE</span> — {bearish_tfs}/{total_valid} timeframes below 50'
+        else:
+            confluence = f'<span style="color:#f59e0b;font-weight:700;">MIXED</span> — {bullish_tfs} bullish, {bearish_tfs} bearish across {total_valid} timeframes'
+    else:
+        confluence = ""
+
+    return f"""<div class="intel-card">
+    <h3 style="display:flex;justify-content:space-between;align-items:center;">
+        <span>Multi-TF RSI(14)</span>
+        <span style="font-size:9px;color:#5a6a8a;">8 TIMEFRAMES</span>
+    </h3>
+    <table style="width:100%;border-collapse:collapse;margin:6px 0;">
+        <tr>
+            <th style="text-align:left;font-size:9px;color:#5a6a8a;padding:4px 8px;border-bottom:1px solid #1e2745;">TF</th>
+            <th style="text-align:center;font-size:9px;color:#5a6a8a;padding:4px 8px;border-bottom:1px solid #1e2745;">RSI</th>
+            <th style="text-align:center;font-size:9px;color:#5a6a8a;padding:4px 8px;border-bottom:1px solid #1e2745;">STATE</th>
+            <th style="font-size:9px;color:#5a6a8a;padding:4px 8px;border-bottom:1px solid #1e2745;">30 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 70</th>
+        </tr>
+        {rows}
+    </table>
+    <div style="padding:8px;border-top:1px solid #1e2745;font-size:11px;margin-top:4px;">
+        {confluence}
+    </div>
+    </div>"""
+
+
+def render_mtf_fib_html(fib_data):
+    """Render multi-timeframe Fibonacci levels."""
+    if not fib_data:
+        return '<div style="color:#5a6a8a;font-size:12px;">Fibonacci data unavailable</div>'
+
+    # Show the most useful timeframes: Daily, 4H, 1H, 15min
+    priority_tfs = ["Daily", "4H", "1H", "15min"]
+    filtered = [f for f in fib_data if f[0] in priority_tfs]
+    if not filtered:
+        filtered = fib_data[:4]
+
+    tabs_html = ""
+    for i, (label, fibs, current, nearest) in enumerate(filtered):
+        levels_html = ""
+        for name, level in fibs.items():
+            is_nearest = name == nearest
+            dist_pct = ((current - level) / level) * 100 if level > 0 else 0
+
+            # Color: support (below price) = green, resistance (above price) = red
+            if level > current:
+                lev_color = "#ef4444"
+                lev_type = "R"
+            elif level < current:
+                lev_color = "#10b981"
+                lev_type = "S"
+            else:
+                lev_color = "#f0b90b"
+                lev_type = "="
+
+            highlight = "background:rgba(240,185,11,0.08);font-weight:700;" if is_nearest else ""
+
+            levels_html += f"""<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 6px;border-bottom:1px solid #1e274522;font-size:11px;{highlight}">
+                <span style="color:#94a3b8;width:85px;">{name}</span>
+                <span style="font-family:JetBrains Mono;color:{lev_color};font-weight:600;">${level:,.2f}</span>
+                <span style="font-size:9px;color:#5a6a8a;width:55px;text-align:right;">{dist_pct:+.1f}%{' ◄' if is_nearest else ''}</span>
+            </div>"""
+
+        tabs_html += f"""<div style="margin-bottom:12px;">
+            <div style="font-size:11px;font-weight:700;color:#f0b90b;margin-bottom:4px;letter-spacing:0.5px;">{label}</div>
+            <div style="font-size:9px;color:#5a6a8a;margin-bottom:4px;">
+                Swing: ${fibs['100.0% (Low)']:,.2f} → ${fibs['0.0% (High)']:,.2f} &nbsp;|&nbsp;
+                Current: ${current:,.2f} near <span style="color:#f0b90b;">{nearest}</span>
+            </div>
+            {levels_html}
+        </div>"""
+
+    return f"""<div class="intel-card">
+    <h3 style="display:flex;justify-content:space-between;align-items:center;">
+        <span>Multi-TF Fibonacci</span>
+        <span style="font-size:9px;color:#5a6a8a;">RETRACEMENT</span>
+    </h3>
+    {tabs_html}
+    </div>"""
+
+
 def detect_volume_spikes(df, threshold=1.5):
     """Detect candles with abnormally high volume."""
     df = df.copy()
@@ -3142,6 +3416,11 @@ def main():
     candle_patterns = detect_candlestick_patterns(gold_df)
     news_sentiment = compute_news_sentiment(news)
 
+    # ── Multi-Timeframe RSI + Fibonacci ──
+    mtf_raw = fetch_multi_tf_data(GOLD_TICKER)
+    mtf_rsi = compute_multi_tf_rsi(mtf_raw)
+    mtf_fib = compute_multi_tf_fib(mtf_raw)
+
     current = gold_df['Close'].iloc[-1]
     prev = gold_df['Close'].iloc[-2]
     daily_chg = current - prev
@@ -3850,6 +4129,21 @@ def main():
                 </h3>
                 {render_patterns_html(candle_patterns)}
             </div>""", unsafe_allow_html=True)
+
+        # ── THIRD ROW: Multi-TF RSI Heatmap | Multi-TF Fibonacci ──
+        st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+        st.markdown("""<div class="section-header" style="--section-accent: #a855f7;">
+            <span class="section-title">Multi-Timeframe Analysis</span>
+            <span class="pill pill-model">RSI + FIBONACCI</span>
+        </div>""", unsafe_allow_html=True)
+
+        rsi_col, fib_col = st.columns(2)
+
+        with rsi_col:
+            st.markdown(render_mtf_rsi_html(mtf_rsi), unsafe_allow_html=True)
+
+        with fib_col:
+            st.markdown(render_mtf_fib_html(mtf_fib), unsafe_allow_html=True)
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # TAB 4 — NEWS & EVENTS
