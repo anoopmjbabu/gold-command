@@ -50,6 +50,9 @@ CORRELATED = {
     "BTC/USD": "BTC-USD",
 }
 
+# ETF tickers for flow tracking
+GOLD_ETFS = {"GLD": "GLD", "IAU": "IAU"}
+
 # S/R levels now computed dynamically by signal_engine.py
 
 # ═══════════════════════════════════════════════════════════════
@@ -716,6 +719,19 @@ header {visibility: hidden;}
         padding: 8px 10px !important;
     }
 }
+/* ── NEW: Fear & Greed, COT, ETF Flows, Patterns, Sentiment, Gold/Silver ── */
+.fg-gauge { text-align: center; padding: 12px 0; }
+.fg-score { font-size: 42px; font-weight: 900; line-height: 1; }
+.fg-bar { height: 8px; background: linear-gradient(90deg,#ef4444,#f97316,#f59e0b,#22c55e,#10b981); border-radius: 4px; position: relative; margin-top: 2px; }
+.new-feature-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+@media (max-width: 768px) { .new-feature-row { grid-template-columns: 1fr; } }
+.ratio-card { background: #111827; border: 1px solid #1e2745; border-radius: 10px; padding: 14px; }
+.ratio-value { font-size: 28px; font-weight: 800; color: #f0b90b; font-family: 'JetBrains Mono'; }
+.ratio-compare { font-size: 10px; color: #64748b; }
+.pattern-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; margin: 2px; }
+.pattern-bull { background: rgba(16,185,129,0.1); color: #10b981; }
+.pattern-bear { background: rgba(239,68,68,0.1); color: #ef4444; }
+.pattern-neutral { background: rgba(245,158,11,0.1); color: #f59e0b; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -745,6 +761,10 @@ GLOSSARY = {
     "Daily Brief": "A plain-English summary of where gold stands right now — price action, key levels, macro alignment, and what to watch. Start here if you're new.",
     "6M High/Low": "The highest and lowest prices gold reached in the past 6 months. These are key reference points — price near the 6M high means we're testing major resistance.",
     "Probability": "The statistical likelihood of price reaching a target within a timeframe, based on historical volatility (ATR). Higher % = more likely based on past moves.",
+    "Fear & Greed": "A composite index (0-100) measuring gold market sentiment. Combines RSI momentum, price vs moving averages, volume, VIX, dollar strength, macro drivers, and Bollinger position. Below 25 = Extreme Fear, above 75 = Extreme Greed.",
+    "COT": "Commitments of Traders — weekly CFTC report showing how hedge funds (managed money) and producers are positioned in gold futures. Rising net longs = speculators are bullish.",
+    "Gold/Silver Ratio": "Gold price divided by silver price. Above 80 = historically high (silver is cheap relative to gold). Below 65 = historically low. Used as an intermarket signal.",
+    "ETF Flows": "Dollar volume flowing into gold ETFs (GLD, IAU) as a proxy for institutional buying/selling. Heavy inflows = institutional demand for gold exposure.",
 }
 
 def tooltip(term, label=None):
@@ -1062,6 +1082,576 @@ def compute_indicators(df):
     df['Vol_ratio'] = df['Volume'] / df['Vol_SMA_20']
 
     return df
+
+
+# ═══════════════════════════════════════════════════════════════
+# NEW: COT POSITIONING DATA (CFTC free public domain data)
+# ═══════════════════════════════════════════════════════════════
+@st.cache_data(ttl=86400)  # Cache for 24 hours — COT updates weekly on Fridays
+def fetch_cot_data():
+    """Fetch Commitments of Traders data for gold futures from CFTC."""
+    try:
+        # CFTC Disaggregated Futures-Only report — gold contract code 088691
+        url = "https://publicreporting.cftc.gov/resource/72hh-3qpy.json"
+        params = {
+            "$where": "cftc_commodity_code='088691'",
+            "$order": "report_date_as_yyyy_mm_dd DESC",
+            "$limit": 20,
+        }
+        resp = requests.get(url, params=params, timeout=15)
+        if resp.status_code != 200:
+            return None
+        records = resp.json()
+        if not records:
+            return None
+
+        cot_list = []
+        for r in records:
+            try:
+                date = r.get('report_date_as_yyyy_mm_dd', '')[:10]
+                # Managed Money (hedge funds / speculators)
+                mm_long = int(float(r.get('m_money_positions_long_all', 0)))
+                mm_short = int(float(r.get('m_money_positions_short_all', 0)))
+                mm_net = mm_long - mm_short
+                # Producer/Merchant (commercials)
+                prod_long = int(float(r.get('prod_merc_positions_long_all', 0)))
+                prod_short = int(float(r.get('prod_merc_positions_short_all', 0)))
+                prod_net = prod_long - prod_short
+                # Swap Dealers
+                swap_long = int(float(r.get('swap_positions_long_all', 0)))
+                swap_short = int(float(r.get('swap__positions_short_all', 0)))
+                swap_net = swap_long - swap_short
+                # Open Interest
+                oi = int(float(r.get('open_interest_all', 0)))
+
+                cot_list.append({
+                    'date': date,
+                    'mm_long': mm_long, 'mm_short': mm_short, 'mm_net': mm_net,
+                    'prod_long': prod_long, 'prod_short': prod_short, 'prod_net': prod_net,
+                    'swap_long': swap_long, 'swap_short': swap_short, 'swap_net': swap_net,
+                    'oi': oi,
+                })
+            except (ValueError, TypeError):
+                continue
+        return cot_list if cot_list else None
+    except Exception as e:
+        logger.warning(f"COT fetch failed: {e}")
+        return None
+
+
+def render_cot_html(cot_data):
+    """Render COT positioning as an HTML card."""
+    if not cot_data or len(cot_data) < 2:
+        return '<div class="intel-card"><p style="color:#5a6a8a;font-size:12px;">COT data unavailable</p></div>'
+
+    latest = cot_data[0]
+    prev = cot_data[1]
+    mm_chg = latest['mm_net'] - prev['mm_net']
+    prod_chg = latest['prod_net'] - prev['prod_net']
+
+    # Determine sentiment from managed money positioning
+    if latest['mm_net'] > 0 and mm_chg > 0:
+        mm_sentiment = "BULLISH"
+        mm_color = "#10b981"
+    elif latest['mm_net'] > 0 and mm_chg < 0:
+        mm_sentiment = "REDUCING LONGS"
+        mm_color = "#f59e0b"
+    elif latest['mm_net'] < 0:
+        mm_sentiment = "BEARISH"
+        mm_color = "#ef4444"
+    else:
+        mm_sentiment = "NEUTRAL"
+        mm_color = "#94a3b8"
+
+    # Net position history (last 8 weeks) for mini sparkline
+    hist_vals = [c['mm_net'] for c in cot_data[:8]][::-1]
+    max_val = max(abs(v) for v in hist_vals) if hist_vals else 1
+    bars_html = ""
+    for v in hist_vals:
+        h = max(3, abs(v) / max_val * 24)
+        c = "#10b981" if v > 0 else "#ef4444"
+        bars_html += f'<div style="width:8px;height:{h:.0f}px;background:{c};border-radius:2px;"></div>'
+
+    html = f"""<div class="intel-card">
+    <h3 style="display:flex;justify-content:space-between;align-items:center;">
+        <span>COT Positioning <span class="pill pill-data">CFTC</span></span>
+        <span style="font-size:9px;color:#5a6a8a;">Report: {latest['date']}</span>
+    </h3>
+    <div style="margin:8px 0;">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #1e2745;">
+            <span style="font-size:11px;color:#94a3b8;">Managed Money (Specs)</span>
+            <span style="font-weight:700;color:{mm_color};font-size:12px;">{mm_sentiment}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:11px;">
+            <span style="color:#64748b;">Net Position</span>
+            <span style="font-family:JetBrains Mono;color:#e2e8f0;">{latest['mm_net']:+,.0f}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:11px;">
+            <span style="color:#64748b;">Weekly Change</span>
+            <span style="font-family:JetBrains Mono;color:{'#10b981' if mm_chg > 0 else '#ef4444'};">{mm_chg:+,.0f}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:11px;border-bottom:1px solid #1e2745;">
+            <span style="color:#64748b;">Long / Short</span>
+            <span style="font-family:JetBrains Mono;font-size:10px;color:#94a3b8;">{latest['mm_long']:,.0f} / {latest['mm_short']:,.0f}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:11px;">
+            <span style="color:#64748b;">Producers (Hedgers)</span>
+            <span style="font-family:JetBrains Mono;color:#94a3b8;">{latest['prod_net']:+,.0f} <span style="color:{'#10b981' if prod_chg > 0 else '#ef4444'};font-size:10px;">({prod_chg:+,.0f})</span></span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:11px;">
+            <span style="color:#64748b;">Open Interest</span>
+            <span style="font-family:JetBrains Mono;color:#94a3b8;">{latest['oi']:,.0f}</span>
+        </div>
+    </div>
+    <div style="margin-top:8px;padding-top:8px;border-top:1px solid #1e2745;">
+        <span style="font-size:9px;color:#5a6a8a;display:block;margin-bottom:4px;">Managed Money Net — Last 8 Weeks</span>
+        <div style="display:flex;align-items:flex-end;gap:3px;height:28px;">
+            {bars_html}
+        </div>
+    </div>
+    </div>"""
+    return html
+
+
+# ═══════════════════════════════════════════════════════════════
+# NEW: GOLD ETF FLOW TRACKER
+# ═══════════════════════════════════════════════════════════════
+@st.cache_data(ttl=600)
+def fetch_etf_flows():
+    """Fetch GLD and IAU volume data as a proxy for institutional gold flows."""
+    flows = {}
+    for name, ticker in GOLD_ETFS.items():
+        try:
+            t = yf.Ticker(ticker)
+            df = t.history(period="3mo")
+            df.index = df.index.tz_localize(None) if df.index.tz else df.index
+            if len(df) > 20:
+                latest_vol = df['Volume'].iloc[-1]
+                avg_vol = df['Volume'].tail(20).mean()
+                vol_ratio = latest_vol / avg_vol if avg_vol > 0 else 1.0
+                price = df['Close'].iloc[-1]
+                daily_chg = (df['Close'].iloc[-1] - df['Close'].iloc[-2]) / df['Close'].iloc[-2] * 100
+                # Dollar volume as flow proxy
+                dollar_vol = latest_vol * price
+                avg_dollar_vol = (df['Volume'].tail(20) * df['Close'].tail(20)).mean()
+                dollar_ratio = dollar_vol / avg_dollar_vol if avg_dollar_vol > 0 else 1.0
+                # 5-day flow trend
+                recent_ratios = []
+                for i in range(-5, 0):
+                    dv = df['Volume'].iloc[i] * df['Close'].iloc[i]
+                    recent_ratios.append(dv / avg_dollar_vol if avg_dollar_vol > 0 else 1.0)
+
+                flows[name] = {
+                    'price': price, 'daily_chg': daily_chg,
+                    'volume': latest_vol, 'avg_volume': avg_vol, 'vol_ratio': vol_ratio,
+                    'dollar_vol': dollar_vol, 'dollar_ratio': dollar_ratio,
+                    'recent_ratios': recent_ratios,
+                }
+        except Exception as e:
+            logger.warning(f"ETF flow fetch failed for {name}: {e}")
+    return flows
+
+
+def render_etf_flows_html(flows):
+    """Render ETF flow data as HTML card."""
+    if not flows:
+        return '<div class="intel-card"><p style="color:#5a6a8a;font-size:12px;">ETF flow data unavailable</p></div>'
+
+    rows = ""
+    aggregate_signal = 0
+    for name, f in flows.items():
+        flow_color = "#10b981" if f['dollar_ratio'] > 1.2 else "#ef4444" if f['dollar_ratio'] < 0.7 else "#94a3b8"
+        flow_label = "HEAVY INFLOW" if f['dollar_ratio'] > 1.5 else "ABOVE AVG" if f['dollar_ratio'] > 1.2 else "LIGHT" if f['dollar_ratio'] < 0.7 else "NORMAL"
+        aggregate_signal += f['dollar_ratio']
+
+        # Mini 5-day flow bars
+        bars = ""
+        for r in f['recent_ratios']:
+            h = max(3, min(20, r * 12))
+            c = "#10b981" if r > 1.0 else "#ef4444"
+            bars += f'<div style="width:6px;height:{h:.0f}px;background:{c};border-radius:1px;"></div>'
+
+        rows += f"""<div style="padding:8px 0;border-bottom:1px solid #1e2745;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                    <span style="font-weight:700;color:#e2e8f0;font-size:12px;">{name}</span>
+                    <span style="font-size:10px;color:#64748b;margin-left:6px;">${f['price']:,.2f} ({f['daily_chg']:+.1f}%)</span>
+                </div>
+                <span style="font-size:10px;font-weight:700;color:{flow_color};">{flow_label}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
+                <div style="font-size:10px;color:#64748b;">Vol: {f['vol_ratio']:.1f}x avg &nbsp;·&nbsp; ${f['dollar_vol']/1e6:,.0f}M dollar vol</div>
+                <div style="display:flex;align-items:flex-end;gap:2px;height:20px;">{bars}</div>
+            </div>
+        </div>"""
+
+    # Aggregate signal
+    avg_ratio = aggregate_signal / len(flows) if flows else 1.0
+    if avg_ratio > 1.3:
+        agg_label, agg_color = "INSTITUTIONAL BUYING", "#10b981"
+    elif avg_ratio < 0.7:
+        agg_label, agg_color = "INSTITUTIONAL SELLING", "#ef4444"
+    else:
+        agg_label, agg_color = "NORMAL FLOW", "#94a3b8"
+
+    return f"""<div class="intel-card">
+    <h3 style="display:flex;justify-content:space-between;align-items:center;">
+        <span>ETF Flows <span class="pill pill-data">GLD · IAU</span></span>
+        <span style="font-size:10px;font-weight:700;color:{agg_color};">{agg_label}</span>
+    </h3>
+    {rows}
+    </div>"""
+
+
+# ═══════════════════════════════════════════════════════════════
+# NEW: GOLD/SILVER RATIO MONITOR
+# ═══════════════════════════════════════════════════════════════
+def compute_gold_silver_ratio(gold_df, corr_data):
+    """Compute gold/silver ratio and context."""
+    if 'Silver' not in corr_data or corr_data['Silver'].empty or gold_df.empty:
+        return None
+    try:
+        silver_df = corr_data['Silver']
+        # Align on common dates
+        common = gold_df.index.intersection(silver_df.index)
+        if len(common) < 20:
+            return None
+        g = gold_df.loc[common, 'Close']
+        s = silver_df.loc[common, 'Close']
+        ratio = g / s
+        current_ratio = ratio.iloc[-1]
+        avg_20d = ratio.tail(20).mean()
+        avg_50d = ratio.tail(50).mean() if len(ratio) >= 50 else avg_20d
+        ratio_high = ratio.max()
+        ratio_low = ratio.min()
+
+        # Interpretation
+        if current_ratio > 85:
+            interp = "Historically elevated — silver may outperform"
+            interp_color = "#f59e0b"
+        elif current_ratio > 75:
+            interp = "Above average — slight gold preference"
+            interp_color = "#94a3b8"
+        elif current_ratio > 65:
+            interp = "Normal range — balanced precious metals"
+            interp_color = "#10b981"
+        else:
+            interp = "Low ratio — gold may outperform silver"
+            interp_color = "#3b82f6"
+
+        # 5-day history for sparkline
+        hist = ratio.tail(10).tolist()
+
+        return {
+            'current': current_ratio, 'avg_20d': avg_20d, 'avg_50d': avg_50d,
+            'high': ratio_high, 'low': ratio_low,
+            'interp': interp, 'interp_color': interp_color,
+            'history': hist,
+        }
+    except Exception as e:
+        logger.warning(f"Gold/Silver ratio calc failed: {e}")
+        return None
+
+
+# ═══════════════════════════════════════════════════════════════
+# NEW: GOLD FEAR & GREED COMPOSITE INDEX
+# ═══════════════════════════════════════════════════════════════
+def compute_fear_greed_index(gold_df, corr_data, drivers):
+    """Compute a gold-specific Fear & Greed index (0-100) from existing data."""
+    scores = []
+
+    # 1. RSI component (0-100 mapped: 30=0 fear, 70=100 greed)
+    rsi = gold_df['RSI'].iloc[-1]
+    rsi_score = max(0, min(100, (rsi - 30) * 2.5))  # 30→0, 70→100
+    scores.append(('RSI Momentum', rsi_score, f'RSI at {rsi:.0f}'))
+
+    # 2. Price vs SMA20 (distance from mean)
+    current = gold_df['Close'].iloc[-1]
+    sma20 = gold_df['SMA_20'].iloc[-1]
+    dist_pct = ((current - sma20) / sma20) * 100
+    sma_score = max(0, min(100, 50 + dist_pct * 10))  # +5% above = 100, -5% below = 0
+    scores.append(('Price vs SMA20', sma_score, f'{dist_pct:+.1f}% from 20-day avg'))
+
+    # 3. Volume conviction (high vol on up days = greed, high vol on down days = fear)
+    vol_ratio = gold_df['Vol_ratio'].iloc[-1]
+    daily_chg = current - gold_df['Close'].iloc[-2]
+    if daily_chg >= 0:
+        vol_score = min(100, 50 + vol_ratio * 20)  # Up day + high volume = greed
+    else:
+        vol_score = max(0, 50 - vol_ratio * 20)  # Down day + high volume = fear
+    scores.append(('Volume Conviction', vol_score, f'{vol_ratio:.1f}x avg volume'))
+
+    # 4. VIX component (inverted: high VIX = fear)
+    if 'VIX' in corr_data and not corr_data['VIX'].empty:
+        vix_val = corr_data['VIX']['Close'].iloc[-1]
+        vix_score = max(0, min(100, 100 - (vix_val - 12) * 4))  # VIX 12=100, VIX 37=0
+        scores.append(('Market Fear (VIX)', vix_score, f'VIX at {vix_val:.1f}'))
+
+    # 5. Macro driver balance
+    bull_count = sum(1 for d in drivers if d[2] == "BULLISH")
+    bear_count = sum(1 for d in drivers if d[2] == "BEARISH")
+    total = bull_count + bear_count if (bull_count + bear_count) > 0 else 1
+    driver_score = (bull_count / total) * 100
+    scores.append(('Macro Drivers', driver_score, f'{bull_count}B / {bear_count}B'))
+
+    # 6. Bollinger Band position (where price sits within bands)
+    bb_upper = gold_df['BB_upper'].iloc[-1]
+    bb_lower = gold_df['BB_lower'].iloc[-1]
+    bb_range = bb_upper - bb_lower if bb_upper != bb_lower else 1
+    bb_score = max(0, min(100, ((current - bb_lower) / bb_range) * 100))
+    scores.append(('Bollinger Position', bb_score, f'{"Upper" if bb_score > 70 else "Lower" if bb_score < 30 else "Mid"} band'))
+
+    # 7. DXY inverse (weak dollar = greed for gold)
+    if 'DXY' in corr_data and not corr_data['DXY'].empty:
+        dxy = corr_data['DXY']['Close']
+        dxy_chg = (dxy.iloc[-1] - dxy.iloc[-2]) / dxy.iloc[-2] * 100
+        dxy_score = max(0, min(100, 50 - dxy_chg * 25))  # DXY down = greed for gold
+        scores.append(('Dollar Weakness', dxy_score, f'DXY {dxy_chg:+.2f}%'))
+
+    # Composite
+    composite = sum(s[1] for s in scores) / len(scores) if scores else 50
+
+    # Label
+    if composite >= 80:
+        label, color = "EXTREME GREED", "#10b981"
+    elif composite >= 60:
+        label, color = "GREED", "#22c55e"
+    elif composite >= 45:
+        label, color = "NEUTRAL", "#f59e0b"
+    elif composite >= 25:
+        label, color = "FEAR", "#f97316"
+    else:
+        label, color = "EXTREME FEAR", "#ef4444"
+
+    return {'score': composite, 'label': label, 'color': color, 'components': scores}
+
+
+def render_fear_greed_html(fg):
+    """Render Fear & Greed index as HTML."""
+    if not fg:
+        return ''
+
+    # Gauge visualization
+    pct = fg['score']
+    angle = (pct / 100) * 180  # 0=left (fear), 180=right (greed)
+
+    # Component bars
+    comp_html = ""
+    for name, score, detail in fg['components']:
+        bar_color = "#10b981" if score >= 60 else "#ef4444" if score < 40 else "#f59e0b"
+        comp_html += f"""<div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:11px;">
+            <span style="width:120px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{name}</span>
+            <div style="flex:1;height:6px;background:#1e2745;border-radius:3px;overflow:hidden;">
+                <div style="width:{score:.0f}%;height:100%;background:{bar_color};border-radius:3px;"></div>
+            </div>
+            <span style="width:30px;text-align:right;font-family:JetBrains Mono;color:{bar_color};font-size:10px;">{score:.0f}</span>
+        </div>"""
+
+    return f"""<div class="intel-card" style="border-top:2px solid {fg['color']};">
+    <h3 style="display:flex;justify-content:space-between;align-items:center;">
+        <span>Gold Fear &amp; Greed</span>
+        <span style="font-size:10px;font-weight:700;color:#5a6a8a;">COMPOSITE INDEX</span>
+    </h3>
+    <div style="text-align:center;padding:12px 0;">
+        <div style="font-size:42px;font-weight:900;color:{fg['color']};line-height:1;">{fg['score']:.0f}</div>
+        <div style="font-size:13px;font-weight:700;color:{fg['color']};letter-spacing:1px;margin-top:4px;">{fg['label']}</div>
+        <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:9px;color:#5a6a8a;">
+            <span>EXTREME FEAR</span><span>NEUTRAL</span><span>EXTREME GREED</span>
+        </div>
+        <div style="height:8px;background:linear-gradient(90deg,#ef4444,#f97316,#f59e0b,#22c55e,#10b981);border-radius:4px;position:relative;margin-top:2px;">
+            <div style="position:absolute;left:{pct:.0f}%;top:-3px;width:3px;height:14px;background:#fff;border-radius:2px;transform:translateX(-50%);"></div>
+        </div>
+    </div>
+    <div style="margin-top:8px;padding-top:8px;border-top:1px solid #1e2745;">
+        <span style="font-size:9px;color:#5a6a8a;display:block;margin-bottom:6px;">COMPONENT BREAKDOWN</span>
+        {comp_html}
+    </div>
+    </div>"""
+
+
+# ═══════════════════════════════════════════════════════════════
+# NEW: CANDLESTICK PATTERN RECOGNITION
+# ═══════════════════════════════════════════════════════════════
+def detect_candlestick_patterns(df):
+    """Detect common candlestick patterns from OHLC data."""
+    patterns = []
+    if len(df) < 5:
+        return patterns
+
+    for i in range(-3, 0):  # Check last 3 candles
+        try:
+            o, h, l, c = df['Open'].iloc[i], df['High'].iloc[i], df['Low'].iloc[i], df['Close'].iloc[i]
+            body = abs(c - o)
+            total_range = h - l if h != l else 0.01
+            upper_wick = h - max(o, c)
+            lower_wick = min(o, c) - l
+            date = df.index[i].strftime('%b %d') if hasattr(df.index[i], 'strftime') else str(df.index[i])[:10]
+
+            # Previous candle for context
+            po, pc = df['Open'].iloc[i - 1], df['Close'].iloc[i - 1]
+            prev_body = abs(pc - po)
+            prev_bullish = pc > po
+
+            # Hammer / Hanging Man (long lower wick, small body at top)
+            if lower_wick > body * 2 and upper_wick < body * 0.5 and body > 0:
+                if c > o:
+                    patterns.append({'date': date, 'name': 'Hammer', 'type': 'BULLISH',
+                                     'desc': 'Long lower wick — buyers stepped in at lows', 'strength': 'STRONG'})
+                else:
+                    patterns.append({'date': date, 'name': 'Hanging Man', 'type': 'BEARISH',
+                                     'desc': 'Selling pressure after up-move', 'strength': 'MODERATE'})
+
+            # Shooting Star (long upper wick, small body at bottom)
+            elif upper_wick > body * 2 and lower_wick < body * 0.5 and body > 0:
+                patterns.append({'date': date, 'name': 'Shooting Star', 'type': 'BEARISH',
+                                 'desc': 'Rejected at highs — sellers in control', 'strength': 'STRONG'})
+
+            # Doji (tiny body, wicks both sides)
+            elif body < total_range * 0.1 and total_range > 0:
+                patterns.append({'date': date, 'name': 'Doji', 'type': 'NEUTRAL',
+                                 'desc': 'Indecision — market at equilibrium', 'strength': 'MODERATE'})
+
+            # Bullish Engulfing
+            elif c > o and not prev_bullish and body > prev_body * 1.1 and c > po and o < pc:
+                patterns.append({'date': date, 'name': 'Bullish Engulfing', 'type': 'BULLISH',
+                                 'desc': 'Buyers overwhelmed prior selling — reversal signal', 'strength': 'STRONG'})
+
+            # Bearish Engulfing
+            elif c < o and prev_bullish and body > prev_body * 1.1 and c < po and o > pc:
+                patterns.append({'date': date, 'name': 'Bearish Engulfing', 'type': 'BEARISH',
+                                 'desc': 'Sellers overwhelmed prior buying — reversal signal', 'strength': 'STRONG'})
+
+            # Marubozu (full body, very small wicks)
+            elif body > total_range * 0.85:
+                if c > o:
+                    patterns.append({'date': date, 'name': 'Bullish Marubozu', 'type': 'BULLISH',
+                                     'desc': 'Strong buying from open to close — conviction', 'strength': 'STRONG'})
+                else:
+                    patterns.append({'date': date, 'name': 'Bearish Marubozu', 'type': 'BEARISH',
+                                     'desc': 'Strong selling from open to close — conviction', 'strength': 'STRONG'})
+
+        except (IndexError, TypeError):
+            continue
+
+    return patterns
+
+
+def render_patterns_html(patterns):
+    """Render detected candlestick patterns."""
+    if not patterns:
+        return '<div style="font-size:11px;color:#5a6a8a;padding:4px 0;">No significant patterns in last 3 sessions</div>'
+
+    html = ""
+    for p in patterns[:4]:  # Max 4 patterns
+        type_color = "#10b981" if p['type'] == 'BULLISH' else "#ef4444" if p['type'] == 'BEARISH' else "#f59e0b"
+        strength_bg = "rgba(16,185,129,0.1)" if p['strength'] == 'STRONG' else "rgba(249,115,22,0.1)"
+        html += f"""<div style="padding:6px 0;border-bottom:1px solid #1e274533;font-size:11px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="color:#e2e8f0;font-weight:600;">{p['name']}</span>
+                <div style="display:flex;gap:4px;align-items:center;">
+                    <span style="font-size:9px;background:{strength_bg};padding:1px 5px;border-radius:3px;color:{type_color};">{p['strength']}</span>
+                    <span style="font-size:9px;font-weight:700;color:{type_color};">{p['type']}</span>
+                </div>
+            </div>
+            <div style="color:#64748b;font-size:10px;margin-top:2px;">{p['date']} — {p['desc']}</div>
+        </div>"""
+    return html
+
+
+# ═══════════════════════════════════════════════════════════════
+# NEW: NEWS SENTIMENT SCORING (keyword-based fallback, no API key needed)
+# ═══════════════════════════════════════════════════════════════
+def compute_news_sentiment(news_articles):
+    """Compute aggregate sentiment from news articles using keyword analysis."""
+    if not news_articles:
+        return None
+
+    # Gold-specific sentiment keywords
+    bullish_kw = {'surge', 'rally', 'soar', 'jump', 'climb', 'gain', 'rise', 'high', 'record',
+                  'safe haven', 'buying', 'demand', 'bullish', 'upside', 'breakout', 'support',
+                  'easing', 'dovish', 'cut', 'stimulus', 'uncertainty', 'fear', 'crisis',
+                  'geopolitical', 'tension', 'war', 'inflation', 'weaker dollar'}
+    bearish_kw = {'drop', 'fall', 'decline', 'slide', 'plunge', 'sell', 'loss', 'low', 'crash',
+                  'bearish', 'downside', 'resistance', 'hawkish', 'hike', 'taper', 'strong dollar',
+                  'risk-on', 'equities rally', 'yields rise', 'profit taking', 'correction'}
+
+    bull_count = 0
+    bear_count = 0
+    neutral_count = 0
+    scored_articles = []
+
+    for article in news_articles[:30]:  # Score up to 30 articles
+        title = article.get('title', '').lower()
+        score = 0
+        for kw in bullish_kw:
+            if kw in title:
+                score += 1
+        for kw in bearish_kw:
+            if kw in title:
+                score -= 1
+
+        if score > 0:
+            bull_count += 1
+            sentiment = "BULLISH"
+        elif score < 0:
+            bear_count += 1
+            sentiment = "BEARISH"
+        else:
+            neutral_count += 1
+            sentiment = "NEUTRAL"
+
+        scored_articles.append({**article, '_sentiment': sentiment, '_score': score})
+
+    total = bull_count + bear_count + neutral_count
+    if total == 0:
+        return None
+
+    bull_pct = (bull_count / total) * 100
+    bear_pct = (bear_count / total) * 100
+    net_score = ((bull_count - bear_count) / total) * 100  # -100 to +100
+
+    if net_score > 25:
+        label, color = "BULLISH", "#10b981"
+    elif net_score > 5:
+        label, color = "LEAN BULLISH", "#22c55e"
+    elif net_score > -5:
+        label, color = "NEUTRAL", "#f59e0b"
+    elif net_score > -25:
+        label, color = "LEAN BEARISH", "#f97316"
+    else:
+        label, color = "BEARISH", "#ef4444"
+
+    return {
+        'bull_count': bull_count, 'bear_count': bear_count, 'neutral_count': neutral_count,
+        'bull_pct': bull_pct, 'bear_pct': bear_pct, 'net_score': net_score,
+        'label': label, 'color': color, 'articles': scored_articles,
+    }
+
+
+def render_sentiment_html(sentiment):
+    """Render news sentiment gauge."""
+    if not sentiment:
+        return ''
+
+    total = sentiment['bull_count'] + sentiment['bear_count'] + sentiment['neutral_count']
+
+    return f"""<div style="background:#111827;border:1px solid #1e2745;border-radius:8px;padding:12px;margin-bottom:12px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <span style="font-size:12px;font-weight:700;color:#e2e8f0;">News Sentiment</span>
+        <span style="font-size:11px;font-weight:700;color:{sentiment['color']};">{sentiment['label']}</span>
+    </div>
+    <div style="display:flex;height:8px;border-radius:4px;overflow:hidden;margin-bottom:6px;">
+        <div style="width:{sentiment['bull_pct']:.0f}%;background:#10b981;"></div>
+        <div style="width:{100 - sentiment['bull_pct'] - sentiment['bear_pct']:.0f}%;background:#f59e0b33;"></div>
+        <div style="width:{sentiment['bear_pct']:.0f}%;background:#ef4444;"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:10px;color:#64748b;">
+        <span style="color:#10b981;">{sentiment['bull_count']} Bullish ({sentiment['bull_pct']:.0f}%)</span>
+        <span>{sentiment['neutral_count']} Neutral</span>
+        <span style="color:#ef4444;">{sentiment['bear_count']} Bearish ({sentiment['bear_pct']:.0f}%)</span>
+    </div>
+    <div style="font-size:9px;color:#5a6a8a;margin-top:4px;">{total} articles analysed via keyword sentiment</div>
+    </div>"""
 
 
 def detect_volume_spikes(df, threshold=1.5):
@@ -1604,7 +2194,7 @@ def assess_macro_drivers(gold_df, corr_data):
 
 
 def generate_three_tier_analysis(df, spikes_correlated, drivers):
-    """Generate beginner, intermediate, and pro analysis."""
+    """Generate beginner, intermediate, and pro analysis with conviction-based content."""
     current = df['Close'].iloc[-1]
     prev = df['Close'].iloc[-2]
     daily_chg = current - prev
@@ -1617,13 +2207,83 @@ def generate_three_tier_analysis(df, spikes_correlated, drivers):
     bb_lower = df['BB_lower'].iloc[-1]
     macd = df['MACD'].iloc[-1]
     macd_sig = df['MACD_signal'].iloc[-1]
+    macd_hist = df['MACD_hist'].iloc[-1]
+    macd_hist_prev = df['MACD_hist'].iloc[-2]
+    vol_ratio = df['Vol_ratio'].iloc[-1]
 
-    # Count bullish/bearish drivers
+    # ATR-based regime — SAME logic as regime bar for consistency
+    atr_20day = df['ATR_14'].tail(20).mean()
+    atr_ratio = atr / atr_20day if atr_20day > 0 else 1.0
+    if atr_ratio > 1.5:
+        vol_regime_label = "HIGH"
+        vol_regime_desc = "high"
+    elif atr_ratio > 1.2:
+        vol_regime_label = "ELEVATED"
+        vol_regime_desc = "elevated"
+    else:
+        vol_regime_label = "NORMAL"
+        vol_regime_desc = "normal"
+
+    # Count bullish/bearish drivers and extract specifics
     bull_count = sum(1 for d in drivers if d[2] == "BULLISH")
     bear_count = sum(1 for d in drivers if d[2] == "BEARISH")
+    bull_drivers = [d for d in drivers if d[2] == "BULLISH"]
+    bear_drivers = [d for d in drivers if d[2] == "BEARISH"]
 
-    direction = "up" if daily_chg >= 0 else "down"
-    trend_word = "rising" if current > sma20 else "falling"
+    # Determine dominant force
+    if bull_count > bear_count + 1:
+        net_bias = "bullish"
+        bias_strength = "strong" if bull_count >= bear_count + 3 else "moderate"
+    elif bear_count > bull_count + 1:
+        net_bias = "bearish"
+        bias_strength = "strong" if bear_count >= bull_count + 3 else "moderate"
+    else:
+        net_bias = "mixed"
+        bias_strength = "evenly balanced"
+
+    # Trend assessment
+    above_sma20 = current > sma20
+    above_sma50 = sma50 is not None and current > sma50
+    if above_sma20 and above_sma50:
+        trend_state = "uptrend"
+        trend_desc = "above both its 20-day and 50-day moving averages"
+    elif above_sma20:
+        trend_state = "recovering"
+        trend_desc = "above its 20-day average but still working through the 50-day"
+    elif sma50 and not above_sma20 and not above_sma50:
+        trend_state = "downtrend"
+        trend_desc = "below both its 20-day and 50-day moving averages"
+    else:
+        trend_state = "weakening"
+        trend_desc = "below its 20-day average"
+
+    # MACD momentum
+    macd_expanding = abs(macd_hist) > abs(macd_hist_prev)
+    macd_bullish = macd > macd_sig
+    if macd_bullish and macd_expanding:
+        macd_read = "bullish momentum is building"
+    elif macd_bullish and not macd_expanding:
+        macd_read = "bullish but momentum is fading"
+    elif not macd_bullish and macd_expanding:
+        macd_read = "bearish pressure is increasing"
+    else:
+        macd_read = "bearish but selling pressure is easing"
+
+    # Bollinger context
+    bb_width_pct = ((bb_upper - bb_lower) / current) * 100
+    bb_compressed = bb_width_pct < 4.0
+    if current > bb_upper * 0.99:
+        bb_read = "pressing against the upper Bollinger Band — extended"
+    elif current < bb_lower * 1.01:
+        bb_read = "testing the lower Bollinger Band — stretched to the downside"
+    elif bb_compressed:
+        bb_read = "compressed within tight Bollinger Bands — a volatility expansion is likely"
+    else:
+        bb_read = "trading mid-range within the Bollinger Bands"
+
+    # Distance from key MAs (for context)
+    dist_sma20_pct = ((current - sma20) / sma20) * 100
+    dist_sma50_pct = ((current - sma50) / sma50) * 100 if sma50 else 0
 
     # Recent spike context
     spike_context = ""
@@ -1632,52 +2292,148 @@ def generate_three_tier_analysis(df, spikes_correlated, drivers):
         spike_news = last_spike['news'][0]['title'] if last_spike['news'] else "No specific catalyst identified"
         spike_context = f"The most recent volume spike was on {last_spike['date']} ({last_spike['direction']}, {last_spike['vol_ratio']:.1f}x avg volume). Likely catalyst: {spike_news}"
 
-    # ─── BEGINNER ─── (using HTML tags to avoid markdown $ rendering issues)
-    rsi_text = f'The RSI is at {rsi:.0f}, which means gold is <b>oversold</b> (potentially due for a bounce).' if rsi < 30 else f'The RSI is at {rsi:.0f}, which means gold is <b>overbought</b> (may pull back soon).' if rsi > 70 else f'The RSI is at {rsi:.0f}, in neutral territory.'
+    # Top driver names for narrative use
+    top_bull = bull_drivers[0][0] if bull_drivers else None
+    top_bear = bear_drivers[0][0] if bear_drivers else None
 
-    beginner = f"""<p>Gold is currently at <b>${current:,.2f}</b>, {'up' if daily_chg >=0 else 'down'} <b>${abs(daily_chg):,.2f}</b> today ({daily_pct:+.2f}%).</p>
+    # Annualized realized vol
+    realized_vol_20d = df['Close'].pct_change().tail(20).std() * 100 * np.sqrt(252)
 
-<p>The price is <b>{'above' if current > sma20 else 'below'}</b> its 20-day average (${sma20:,.2f}), which suggests the short-term trend is <b>{'positive' if current > sma20 else 'negative'}</b>.</p>
+    # ─── BEGINNER ─── Narrative, not template
+    if daily_pct >= 1.0:
+        move_desc = f"a strong move higher of <b>${abs(daily_chg):,.2f}</b> ({daily_pct:+.2f}%)"
+    elif daily_pct >= 0.3:
+        move_desc = f"a solid gain of <b>${abs(daily_chg):,.2f}</b> ({daily_pct:+.2f}%)"
+    elif daily_pct > 0:
+        move_desc = f"a small gain of <b>${abs(daily_chg):,.2f}</b> ({daily_pct:+.2f}%)"
+    elif daily_pct > -0.3:
+        move_desc = f"a small dip of <b>${abs(daily_chg):,.2f}</b> ({daily_pct:+.2f}%)"
+    elif daily_pct > -1.0:
+        move_desc = f"a notable drop of <b>${abs(daily_chg):,.2f}</b> ({daily_pct:+.2f}%)"
+    else:
+        move_desc = f"a sharp sell-off of <b>${abs(daily_chg):,.2f}</b> ({daily_pct:+.2f}%)"
 
-<p>{rsi_text}</p>
+    # Beginner: what's happening + why + what it means
+    beginner_bull_text = ""
+    beginner_bear_text = ""
+    if top_bull:
+        why_bull = [d[3] for d in bull_drivers[:2] if len(d) > 3 and d[3]]
+        beginner_bull_text = f"On the bullish side, {top_bull.lower()}" + (f" — {why_bull[0].lower()}" if why_bull else "") + "."
+    if top_bear:
+        why_bear = [d[3] for d in bear_drivers[:2] if len(d) > 3 and d[3]]
+        beginner_bear_text = f"Working against gold: {top_bear.lower()}" + (f" — {why_bear[0].lower()}" if why_bear else "") + "."
 
-<p><b>What's driving gold right now:</b> {bull_count} factors are pushing gold higher (like geopolitical tensions and market fear), while {bear_count} factors are pushing it lower (like a stronger dollar or higher interest rates).</p>
+    beginner_trend_read = f"The overall picture is <b>{net_bias}</b> right now — {'bulls are in control and the trend is on their side' if net_bias == 'bullish' and trend_state == 'uptrend' else 'sellers have the upper hand' if net_bias == 'bearish' else 'the market is pulling in both directions, so expect choppy price action'}."
+
+    beginner = f"""<p>Gold is at <b>${current:,.2f}</b>, {move_desc} on the session.</p>
+
+<p>The price is {trend_desc}, which tells us the short-term trend is <b>{'working in favour of buyers' if above_sma20 else 'under pressure'}</b>.</p>
+
+<p>{beginner_bull_text} {beginner_bear_text}</p>
+
+<p>{beginner_trend_read}</p>
 
 <p style="font-size:11px;color:#a8b2c8;border-top:1px solid #1e2745;padding-top:8px;margin-top:8px;">{spike_context}</p>"""
 
-    # ─── INTERMEDIATE ───
-    bb_position = "near upper band" if current > bb_upper * 0.99 else "near lower band" if current < bb_lower * 1.01 else "mid-range"
-    macd_signal = "bullish crossover" if macd > macd_sig else "bearish crossover"
+    # ─── INTERMEDIATE ─── Actionable technicals with interpretation
+    macd_signal_label = "bullish crossover" if macd_bullish else "bearish crossover"
 
-    intermediate = f"""<p><b>Price:</b> ${current:,.2f} ({daily_pct:+.2f}%) &nbsp;|&nbsp; <b>Trend:</b> {'Bullish' if current > sma20 else 'Bearish'} below {'20 &amp; 50 SMA' if sma50 and current < sma50 else '20 SMA'}</p>
+    # Trend strength bar
+    trend_signals = []
+    if above_sma20: trend_signals.append("Price > 20 SMA ✓")
+    else: trend_signals.append("Price < 20 SMA ✗")
+    if above_sma50: trend_signals.append("Price > 50 SMA ✓")
+    elif sma50: trend_signals.append("Price < 50 SMA ✗")
+    if macd_bullish: trend_signals.append("MACD bullish ✓")
+    else: trend_signals.append("MACD bearish ✗")
+    if rsi > 50: trend_signals.append("RSI > 50 ✓")
+    else: trend_signals.append("RSI < 50 ✗")
+    bullish_checks = sum(1 for s in trend_signals if "✓" in s)
+    trend_score = f"{bullish_checks}/{len(trend_signals)} bullish"
+
+    intermediate = f"""<p><b>Price:</b> ${current:,.2f} ({daily_pct:+.2f}%) &nbsp;|&nbsp; <b>Trend Score:</b> {trend_score} {'🟢' if bullish_checks >= 3 else '🟡' if bullish_checks == 2 else '🔴'}</p>
+
+<p style="font-size:11px;color:#94a3b8;margin:2px 0;">{' &nbsp;·&nbsp; '.join(trend_signals)}</p>
 
 <p><b>Technical Setup:</b></p>
 <ul style="margin:4px 0;padding-left:18px;font-size:12px;">
-<li>RSI(14): {rsi:.1f} {'⚠️ Oversold' if rsi < 30 else '⚠️ Overbought' if rsi > 70 else ''}</li>
-<li>MACD: {macd_signal} (MACD {macd:.2f} vs Signal {macd_sig:.2f})</li>
-<li>Bollinger Bands: {bb_position} (${bb_lower:,.0f} — ${bb_upper:,.0f})</li>
-<li>ATR(14): ${atr:,.2f} (expected daily range)</li>
-<li>Volume: {'Above' if df['Vol_ratio'].iloc[-1] > 1 else 'Below'} average ({df['Vol_ratio'].iloc[-1]:.1f}x)</li>
+<li><b>RSI(14):</b> {rsi:.1f} — {'⚠️ Oversold territory, watch for a bounce' if rsi < 30 else '⚠️ Overbought, momentum may stall here' if rsi > 70 else 'neutral, no extreme reading'}</li>
+<li><b>MACD:</b> {macd_signal_label} — {macd_read} (histogram {macd_hist:+.2f})</li>
+<li><b>Bollinger Bands:</b> {bb_read} &nbsp;(${bb_lower:,.0f} — ${bb_upper:,.0f}, {bb_width_pct:.1f}% width)</li>
+<li><b>ATR(14):</b> ${atr:,.2f} — volatility is <b>{vol_regime_desc}</b> ({atr_ratio:.1f}x 20-day avg)</li>
+<li><b>Volume:</b> {vol_ratio:.1f}x average — {'above-average participation, confirms the move' if vol_ratio > 1.2 else 'average participation' if vol_ratio > 0.8 else 'thin volume — move lacks conviction'}</li>
 </ul>
 
-<p><b>Key levels to watch:</b> Support at ${sma20:,.0f} (20 SMA){', $' + f'{sma50:,.0f}' + ' (50 SMA)' if sma50 else ''}. Resistance at ${bb_upper:,.0f} (upper BB).</p>
+<p><b>Key levels:</b> Support at <b>${sma20:,.0f}</b> (20 SMA, {dist_sma20_pct:+.1f}% away){', <b>$' + f'{sma50:,.0f}' + '</b> (50 SMA)' if sma50 else ''}. Resistance at <b>${bb_upper:,.0f}</b> (upper BB).</p>
 
 <p style="font-size:11px;color:#a8b2c8;border-top:1px solid #1e2745;padding-top:8px;margin-top:8px;">{spike_context}</p>"""
 
-    # ─── PRO ───
-    vol_regime = "high" if df['Close'].pct_change().tail(20).std() > df['Close'].pct_change().tail(60).std() else "low"
+    # ─── PRO ─── Regime-aware, cross-asset coherent, conviction-based
+    # Cross-asset narrative (not a list of fragments)
+    cross_parts = []
+    for d in drivers:
+        name, _, impact = d[0], d[1], d[2]
+        why = d[3] if len(d) > 3 else ""
+        if 'DXY' in name or 'USD' in name:
+            if impact == "BEARISH":
+                cross_parts.append(f"DXY strength at {d[1]} is a headwind")
+            else:
+                cross_parts.append(f"Weak dollar ({d[1]}) supporting gold")
+        elif '10Y' in name or 'yield' in name.lower():
+            if impact == "BEARISH":
+                cross_parts.append(f"10Y yields elevated — opportunity cost pressure")
+            else:
+                cross_parts.append(f"Falling yields reducing gold's carry disadvantage")
+        elif 'VIX' in name:
+            if impact == "BULLISH":
+                cross_parts.append(f"VIX elevated — risk-off flows favour gold")
+            else:
+                cross_parts.append(f"VIX subdued — no panic bid")
+        elif 'S&P' in name or 'equit' in name.lower():
+            if impact == "BULLISH":
+                cross_parts.append(f"Equity weakness driving safe-haven rotation")
+            else:
+                cross_parts.append(f"Risk-on in equities — competing for capital")
+    cross_text = ". ".join(cross_parts[:4]) + "." if cross_parts else "No clear cross-asset signal today."
 
-    pro = f"""<p><b>Regime:</b> {vol_regime.upper()} volatility | ATR ${atr:,.2f} | 20D realized vol: {df['Close'].pct_change().tail(20).std()*100*np.sqrt(252):.1f}% annualized</p>
+    # Divergence detection
+    dxy_bearish = any(d[0] for d in drivers if ('DXY' in d[0] or 'USD' in d[0]) and d[2] == 'BEARISH')
+    if dxy_bearish and daily_pct > 0:
+        divergence_note = "<br><span style='color:#f0b90b;'>⚡ Gold rising despite dollar strength — safe-haven demand overriding normal inverse correlation.</span>"
+    elif not dxy_bearish and daily_pct < 0:
+        divergence_note = "<br><span style='color:#ef4444;'>⚡ Gold falling despite dollar weakness — selling pressure is dominant.</span>"
+    else:
+        divergence_note = ""
 
-<p><b>Momentum:</b> RSI {rsi:.1f} | MACD histogram {'expanding' if abs(df['MACD_hist'].iloc[-1]) > abs(df['MACD_hist'].iloc[-2]) else 'contracting'} ({df['MACD_hist'].iloc[-1]:+.2f}) | Price {'compressed within' if (bb_upper - bb_lower) / current < 0.04 else 'wide'} BB ({((bb_upper-bb_lower)/current)*100:.1f}% width)</p>
+    # Conviction statement
+    if net_bias == "bullish" and trend_state in ("uptrend", "recovering") and macd_bullish:
+        conviction = f"Technicals and macro are aligned bullish. {bias_strength.title()} conviction on the long side while ${sma20:,.0f} holds."
+    elif net_bias == "bearish" and trend_state in ("downtrend", "weakening") and not macd_bullish:
+        conviction = f"Technicals and macro are aligned bearish. {bias_strength.title()} conviction on the short side while below ${sma20:,.0f}."
+    elif net_bias == "bullish" and not macd_bullish:
+        conviction = f"Macro tilts bullish ({bull_count}B/{bear_count}B) but momentum hasn't confirmed — wait for MACD crossover before adding."
+    elif net_bias == "bearish" and macd_bullish:
+        conviction = f"Macro tilts bearish ({bull_count}B/{bear_count}B) but price momentum is still positive — not a clean short setup."
+    else:
+        conviction = f"Macro mix is {bias_strength} ({bull_count}B/{bear_count}B). Range environment — trade the levels, not a directional bias."
 
-<p><b>Cross-asset snapshot:</b> {'Negative DXY correlation in play — ' if any(d[0] == 'USD (DXY)' and d[2] == 'BEARISH' for d in drivers) else ''}{'Yields rising = headwind — ' if any('10Y' in d[0] and d[2] == 'BEARISH' for d in drivers) else ''}{'VIX elevated = risk-off bid — ' if any('VIX' in d[0] and d[2] == 'BULLISH' for d in drivers) else ''}{'Equities weak = safe haven flow' if any('S&P' in d[0] and d[2] == 'BULLISH' for d in drivers) else ''}</p>
+    # Volume spike context for pro
+    spike_count_2x = len([s for s in spikes_correlated if s['vol_ratio'] > 2]) if spikes_correlated else 0
+    spike_summary = f"{spike_count_2x} sessions with &gt;2x volume in past month" + (f" — institutional participation is {'elevated' if spike_count_2x >= 3 else 'normal'}" if spike_count_2x else "") + "."
 
-<p><b>Volume profile:</b> Last session {df['Vol_ratio'].iloc[-1]:.1f}x avg. {len([s for s in spikes_correlated if s['vol_ratio'] > 2]) if spikes_correlated else 0} sessions with &gt;2x volume in past month.</p>
+    pro = f"""<p><b>Regime:</b> <span style="color:{'#ef4444' if vol_regime_label == 'HIGH' else '#f59e0b' if vol_regime_label == 'ELEVATED' else '#10b981'};font-weight:700;">{vol_regime_label}</span> volatility ({atr_ratio:.2f}x ATR ratio) &nbsp;|&nbsp; ATR ${atr:,.2f} &nbsp;|&nbsp; 20D realized vol: {realized_vol_20d:.1f}% ann.</p>
 
-<p><b>Positioning note:</b> Monitor COT report (Fridays) for net speculative positioning changes. Current macro mix ({bull_count}B/{bear_count}B) suggests a choppy range environment.</p>
+<p><b>Momentum:</b> RSI {rsi:.1f} | MACD {macd_read} (hist {macd_hist:+.2f}) | {bb_read} ({bb_width_pct:.1f}% BB width)</p>
 
-{spike_context}"""
+<p><b>Cross-asset:</b> {cross_text}{divergence_note}</p>
+
+<p><b>Volume:</b> Last session {vol_ratio:.1f}x avg. {spike_summary}</p>
+
+<p style="background:rgba(240,185,11,0.06);border-radius:6px;padding:8px 12px;border-left:2px solid #f0b90b;margin-top:8px;">
+<span style="font-size:9px;font-weight:700;color:#f0b90b;letter-spacing:0.8px;">CONVICTION</span><br>
+<span style="color:#e2e8f0;">{conviction}</span></p>
+
+<p style="font-size:11px;color:#a8b2c8;border-top:1px solid #1e2745;padding-top:8px;margin-top:8px;">{spike_context}</p>"""
 
     return beginner, intermediate, pro
 
@@ -2292,6 +3048,14 @@ def main():
     drivers = assess_macro_drivers(gold_df, corr_data)
     beginner, intermediate, pro = generate_three_tier_analysis(gold_df, spikes_correlated, drivers)
 
+    # ── New Intelligence Features ──
+    cot_data = fetch_cot_data()
+    etf_flows = fetch_etf_flows()
+    gs_ratio = compute_gold_silver_ratio(gold_df, corr_data)
+    fear_greed = compute_fear_greed_index(gold_df, corr_data, drivers)
+    candle_patterns = detect_candlestick_patterns(gold_df)
+    news_sentiment = compute_news_sentiment(news)
+
     current = gold_df['Close'].iloc[-1]
     prev = gold_df['Close'].iloc[-2]
     daily_chg = current - prev
@@ -2461,10 +3225,10 @@ def main():
             <div class="kpi-value">${low_52w:,.0f}</div>
             <div class="kpi-delta up">{((current/low_52w)-1)*100:+.1f}%</div>
         </div>
-        <div class="kpi-card" style="--kpi-accent: {bias_kpi_color};">
-            <div class="kpi-label">{tt_bias}</div>
-            <div class="kpi-value" style="color:{bias_kpi_color};font-size:18px;">{bias_kpi_label}</div>
-            <div class="kpi-delta neutral" style="color:{bias_kpi_color};background:rgba(0,0,0,0.2);">{bull_count}B / {bear_count}B drivers</div>
+        <div class="kpi-card" style="--kpi-accent: {fear_greed['color'] if fear_greed else '#f59e0b'};">
+            <div class="kpi-label">Fear &amp; Greed</div>
+            <div class="kpi-value" style="color:{fear_greed['color'] if fear_greed else '#f59e0b'};font-size:22px;">{fear_greed['score']:.0f}<span style="font-size:11px;color:#5a6a8a;">/100</span></div>
+            <div class="kpi-delta neutral" style="color:{fear_greed['color'] if fear_greed else '#f59e0b'};background:rgba(0,0,0,0.2);">{fear_greed['label'] if fear_greed else 'N/A'}</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -2926,6 +3690,81 @@ def main():
                 </div>""", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
+        # ── NEW: FULL-WIDTH ROW — Fear & Greed | COT | ETF Flows ──
+        st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+        st.markdown("""<div class="section-header" style="--section-accent: #f0b90b;">
+            <span class="section-title">Market Intelligence</span>
+            <span class="pill pill-data">NEW</span>
+        </div>""", unsafe_allow_html=True)
+
+        intel_col1, intel_col2, intel_col3 = st.columns(3)
+
+        with intel_col1:
+            # ── FEAR & GREED INDEX ──
+            fg_html = render_fear_greed_html(fear_greed)
+            if fg_html:
+                st.markdown(fg_html, unsafe_allow_html=True)
+
+        with intel_col2:
+            # ── COT POSITIONING ──
+            cot_html = render_cot_html(cot_data)
+            st.markdown(cot_html, unsafe_allow_html=True)
+
+        with intel_col3:
+            # ── ETF FLOWS ──
+            etf_html = render_etf_flows_html(etf_flows)
+            st.markdown(etf_html, unsafe_allow_html=True)
+
+        # ── SECOND ROW: Gold/Silver Ratio | Candlestick Patterns ──
+        ratio_col, pattern_col = st.columns(2)
+
+        with ratio_col:
+            # ── GOLD/SILVER RATIO ──
+            if gs_ratio:
+                # Mini sparkline bars for ratio history
+                hist = gs_ratio['history']
+                max_r = max(hist) if hist else 1
+                min_r = min(hist) if hist else 0
+                r_range = max_r - min_r if max_r != min_r else 1
+                spark_bars = ""
+                for v in hist:
+                    h = max(4, ((v - min_r) / r_range) * 28)
+                    c = "#f0b90b" if v == hist[-1] else "#3d4b6b"
+                    spark_bars += f'<div style="width:6px;height:{h:.0f}px;background:{c};border-radius:2px;"></div>'
+
+                st.markdown(f"""<div class="intel-card">
+                    <h3 style="display:flex;justify-content:space-between;align-items:center;">
+                        <span>Gold/Silver Ratio</span>
+                        <span style="font-size:10px;font-weight:700;color:{gs_ratio['interp_color']};">INTERMARKET</span>
+                    </h3>
+                    <div style="display:flex;align-items:flex-end;gap:16px;margin:8px 0;">
+                        <div>
+                            <div class="ratio-value">{gs_ratio['current']:.1f}</div>
+                            <div class="ratio-compare">20D avg: {gs_ratio['avg_20d']:.1f} &nbsp;·&nbsp; 50D avg: {gs_ratio['avg_50d']:.1f}</div>
+                        </div>
+                        <div style="display:flex;align-items:flex-end;gap:2px;height:32px;margin-left:auto;">
+                            {spark_bars}
+                        </div>
+                    </div>
+                    <div style="font-size:11px;color:{gs_ratio['interp_color']};margin-top:6px;padding-top:6px;border-top:1px solid #1e2745;">
+                        {gs_ratio['interp']}
+                    </div>
+                    <div style="display:flex;justify-content:space-between;font-size:10px;color:#5a6a8a;margin-top:4px;">
+                        <span>Period Low: {gs_ratio['low']:.1f}</span>
+                        <span>Period High: {gs_ratio['high']:.1f}</span>
+                    </div>
+                </div>""", unsafe_allow_html=True)
+
+        with pattern_col:
+            # ── CANDLESTICK PATTERNS ──
+            st.markdown(f"""<div class="intel-card">
+                <h3 style="display:flex;justify-content:space-between;align-items:center;">
+                    <span>Candlestick Patterns</span>
+                    <span style="font-size:10px;font-weight:700;color:#a855f7;">LAST 3 SESSIONS</span>
+                </h3>
+                {render_patterns_html(candle_patterns)}
+            </div>""", unsafe_allow_html=True)
+
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # TAB 4 — NEWS & EVENTS
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -3086,6 +3925,11 @@ def main():
             st.info("No significant volume spikes detected in recent data.")
 
         st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+
+        # ── NEWS SENTIMENT GAUGE (above news feed) ──
+        if news_sentiment:
+            st.markdown(render_sentiment_html(news_sentiment), unsafe_allow_html=True)
+
         news_col, cal_col = st.columns([1, 1])
 
         with news_col:
@@ -3263,7 +4107,7 @@ def main():
             <span style="font-size:8px;color:#3d4b6b;">📰 Live RSS News Feed</span>
         </div>
         <div style="font-size:8px;color:#3d4b6b;letter-spacing:0.5px;">
-            Data: Yahoo Finance, Google News RSS&nbsp;&nbsp;|&nbsp;&nbsp;Charts: TradingView&nbsp;&nbsp;|&nbsp;&nbsp;Signals: Proprietary Engine<br>
+            Data: Yahoo Finance, Google News RSS, CFTC COT, ForexFactory&nbsp;&nbsp;|&nbsp;&nbsp;Charts: TradingView&nbsp;&nbsp;|&nbsp;&nbsp;Signals: Proprietary Engine<br>
             <span style="color:#f59e0b;">⚠️ This is not financial advice.</span> All data is delayed and for informational purposes only.
         </div>
     </div>""", unsafe_allow_html=True)
