@@ -2661,12 +2661,12 @@ def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, 
             'BEARISH': ('The US Dollar is getting stronger', 'When the dollar rises, gold usually falls because gold becomes more expensive for foreign buyers.', '👎 Bad for gold'),
             'NEUTRAL': ('The US Dollar is steady', 'No major dollar move right now — not pushing gold either way.', '➡️ No effect'),
         },
-        'US 10Y': {
+        'US 10Y Yield': {
             'BULLISH': ('Bond yields are falling', 'When interest rates drop, gold becomes more attractive because bonds pay less — money flows into gold instead.', '👍 Good for gold'),
             'BEARISH': ('Bond yields are rising', 'When interest rates rise, investors prefer bonds over gold because bonds now pay more. Gold loses appeal.', '👎 Bad for gold'),
             'NEUTRAL': ('Bond yields are stable', 'Yields aren\'t moving much — no major pressure on gold from the bond market.', '➡️ No effect'),
         },
-        'VIX': {
+        'VIX (Fear Index)': {
             'BULLISH': ('Market fear is high', 'The "Fear Index" is elevated — investors are nervous and buying gold as a safe place to park money.', '👍 Good for gold'),
             'BEARISH': ('Markets are calm', 'Fear is low — investors feel confident and prefer stocks over safe-haven assets like gold.', '👎 Bad for gold'),
             'NEUTRAL': ('Market anxiety is normal', 'Fear levels are average — no panic buying or confident selling.', '➡️ No effect'),
@@ -3009,10 +3009,13 @@ def main():
 
         st.markdown('<div style="border-bottom:1px solid #1a2240;margin:12px 0;"></div>', unsafe_allow_html=True)
 
-        # Beginner mode toggle
+        # Beginner mode indicator (toggle is on main page for visibility)
         st.markdown("### Display Mode")
-        beginner_mode = st.toggle("Beginner Mode", value=True, help="Show tooltips and simplified explanations")
-        st.session_state['beginner_mode'] = beginner_mode
+        bm_status = "ON" if st.session_state.get('beginner_mode', True) else "OFF"
+        bm_color = "#10b981" if bm_status == "ON" else "#5a6a8a"
+        st.markdown(f'<div style="font-size:11px;color:{bm_color};font-weight:600;">👶 Beginner Mode: {bm_status}</div>'
+                    f'<div style="font-size:9px;color:#5a6a8a;margin-top:2px;">Toggle is at the top-right of the main page</div>',
+                    unsafe_allow_html=True)
 
         st.markdown('<div style="border-bottom:1px solid #1a2240;margin:12px 0;"></div>', unsafe_allow_html=True)
 
@@ -3086,6 +3089,13 @@ def main():
             st.session_state.last_refresh = time.time()
             st.cache_data.clear()
             st.rerun()
+
+    # ── Beginner Mode toggle — placed BEFORE data computation so all components can read it ──
+    bm_col1, bm_col2 = st.columns([6, 1])
+    with bm_col2:
+        beginner_mode = st.toggle("👶 Beginner", value=st.session_state.get('beginner_mode', True),
+                                   help="Simplify everything — plain English explanations, no jargon")
+        st.session_state['beginner_mode'] = beginner_mode
 
     # ── Fetch all data ──
     with st.spinner("Fetching market data..."):
