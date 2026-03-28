@@ -2025,34 +2025,70 @@ def get_market_regime_html(gold_df, econ_events):
         regime_badge_class = "regime-normal"
         regime_color = "#10b981"
 
-    # Check for upcoming HIGH impact event in next 24 hours
-    next_event = None
+    # Check for HIGH impact economic events today
+    high_events = []
     if econ_events:
-        from datetime import timedelta
-        now = datetime.utcnow().date()
+        now_date = datetime.utcnow().date()
+        # Known high-impact event short names for clean display
+        _event_labels = {
+            'nfp': 'NFP', 'non-farm': 'NFP', 'non farm': 'NFP', 'payroll': 'NFP',
+            'fomc': 'FOMC', 'rate decision': 'Fed Rate Decision',
+            'cpi': 'CPI', 'consumer price': 'CPI',
+            'pce': 'PCE', 'core pce': 'Core PCE',
+            'gdp': 'GDP', 'powell': 'Fed Chair Powell',
+            'fed chair': 'Fed Chair Speech',
+        }
         for evt in econ_events:
             evt_date = evt.get('date')
-            if evt_date and (evt_date - now).days == 0 and evt.get('impact') == 'HIGH':
-                next_event = evt
-                break
+            if evt_date and evt_date == now_date and evt.get('impact') == 'HIGH':
+                # Extract a clean short label from the event name or title
+                raw_name = evt.get('event_name', '') or evt.get('title', '')
+                raw_lower = raw_name.lower()
+                short_label = None
+                for kw, label in _event_labels.items():
+                    if kw in raw_lower:
+                        short_label = label
+                        break
+                if not short_label:
+                    # Fallback: take first 4 meaningful words
+                    words = [w for w in raw_name.split() if len(w) > 2][:4]
+                    short_label = ' '.join(words) if words else 'Economic Data'
+                released = evt.get('released', False)
+                actual = evt.get('actual')
+                forecast = evt.get('forecast')
+                if released and actual:
+                    detail = f'{short_label}: {actual}'
+                    if forecast:
+                        detail += f' vs {forecast} exp'
+                    high_events.append(('released', detail))
+                else:
+                    high_events.append(('upcoming', short_label))
 
     event_text = ""
-    if next_event:
-        event_text = f'<div class="regime-info-item" style="color:#ef4444;">⚠ HIGH impact event: {next_event.get("event_name", "")[:30]}</div>'
+    for evt_status, evt_label in high_events[:2]:
+        if evt_status == 'released':
+            event_text += (f'<div class="regime-info-item" style="color:#f59e0b;">'
+                          f'📊 {html_escape(evt_label)}</div>')
+        else:
+            event_text += (f'<div class="regime-info-item" style="color:#ef4444;">'
+                          f'⚠️ Upcoming: {html_escape(evt_label)}</div>')
 
-    # Check active trading session overlaps
+    # Active session from session clock logic
     now_utc = datetime.utcnow()
-    h = now_utc.hour
+    utc_h = now_utc.hour
+    total_mins = utc_h * 60 + now_utc.minute
     is_weekend = now_utc.weekday() >= 5
 
-    london_ny_overlap = (13 <= h < 17) and not is_weekend  # 1pm-5pm UTC = highest liquidity
-    asia_london_overlap = (8 <= h < 9) and not is_weekend
-
     session_text = ""
-    if london_ny_overlap:
-        session_text = '<div class="regime-info-item" style="color:#10b981;">🔥 London-NY Overlap (Peak Liquidity)</div>'
-    elif asia_london_overlap:
-        session_text = '<div class="regime-info-item" style="color:#a8b2c8;">Asia-London Overlap</div>'
+    if not is_weekend:
+        if 12*60 <= total_mins < 16*60:
+            session_text = '<div class="regime-info-item" style="color:#10b981;">🔥 London–NY Overlap</div>'
+        elif 7*60 <= total_mins < 11*60+30:
+            session_text = '<div class="regime-info-item" style="color:#a8b2c8;">India–London Overlap</div>'
+        elif 0*60 <= total_mins < 6*60:
+            session_text = '<div class="regime-info-item" style="color:#a8b2c8;">Sydney–Tokyo Overlap</div>'
+    elif is_weekend:
+        session_text = '<div class="regime-info-item" style="color:#5a6a8a;">Market Closed</div>'
 
     regime_html = (
         f'<div class="regime-bar">'
