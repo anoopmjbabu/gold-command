@@ -1559,6 +1559,533 @@ def render_patterns_html(patterns):
 
 
 # ═══════════════════════════════════════════════════════════════
+# SMC ENGINE — Smart Money Concepts Detection
+# ═══════════════════════════════════════════════════════════════
+
+def detect_order_blocks(df, atr_multiplier=1.5):
+    """Detect institutional order blocks — the last opposing candle before a strong move."""
+    obs = []
+    if len(df) < 5 or 'ATR_14' not in df.columns:
+        return obs
+
+    for i in range(3, len(df)):
+        atr = df['ATR_14'].iloc[i] if not pd.isna(df['ATR_14'].iloc[i]) else df['High'].iloc[i] - df['Low'].iloc[i]
+
+        # Check for strong bullish move at [i]
+        curr_body = df['Close'].iloc[i] - df['Open'].iloc[i]
+        if curr_body > atr * atr_multiplier:
+            # Look back for the last bearish candle before this move
+            for j in range(i-1, max(i-4, 0), -1):
+                if df['Close'].iloc[j] < df['Open'].iloc[j]:  # Bearish candle
+                    obs.append({
+                        'type': 'bullish',
+                        'high': df['High'].iloc[j],
+                        'low': df['Low'].iloc[j],
+                        'open': df['Open'].iloc[j],
+                        'close': df['Close'].iloc[j],
+                        'time': df.index[j],
+                        'tested': df['Low'].iloc[i:].min() <= df['High'].iloc[j] if i < len(df)-1 else False,
+                    })
+                    break
+
+        # Check for strong bearish move at [i]
+        if curr_body < -atr * atr_multiplier:
+            for j in range(i-1, max(i-4, 0), -1):
+                if df['Close'].iloc[j] > df['Open'].iloc[j]:  # Bullish candle
+                    obs.append({
+                        'type': 'bearish',
+                        'high': df['High'].iloc[j],
+                        'low': df['Low'].iloc[j],
+                        'open': df['Open'].iloc[j],
+                        'close': df['Close'].iloc[j],
+                        'time': df.index[j],
+                        'tested': df['High'].iloc[i:].max() >= df['Low'].iloc[j] if i < len(df)-1 else False,
+                    })
+                    break
+
+    return obs[-20:]  # Keep most recent 20
+
+
+def detect_fair_value_gaps(df):
+    """Detect Fair Value Gaps (imbalances) — price gaps left by impulsive moves."""
+    fvgs = []
+    if len(df) < 3:
+        return fvgs
+
+    for i in range(2, len(df)):
+        # Bullish FVG: candle[i].low > candle[i-2].high (gap up)
+        gap_up = df['Low'].iloc[i] - df['High'].iloc[i-2]
+        if gap_up > 0:
+            mid_body = df['Close'].iloc[i-1] - df['Open'].iloc[i-1]
+            if mid_body > 0:  # Middle candle must be bullish
+                filled = df['Low'].iloc[i:].min() <= df['High'].iloc[i-2] if i < len(df)-1 else False
+                fvgs.append({
+                    'type': 'bullish',
+                    'upper': df['Low'].iloc[i],
+                    'lower': df['High'].iloc[i-2],
+                    'size': gap_up,
+                    'time': df.index[i-1],
+                    'filled': filled,
+                })
+
+        # Bearish FVG: candle[i-2].low > candle[i].high (gap down)
+        gap_down = df['Low'].iloc[i-2] - df['High'].iloc[i]
+        if gap_down > 0:
+            mid_body = df['Close'].iloc[i-1] - df['Open'].iloc[i-1]
+            if mid_body < 0:  # Middle candle must be bearish
+                filled = df['High'].iloc[i:].max() >= df['Low'].iloc[i-2] if i < len(df)-1 else False
+                fvgs.append({
+                    'type': 'bearish',
+                    'upper': df['Low'].iloc[i-2],
+                    'lower': df['High'].iloc[i],
+                    'size': gap_down,
+                    'time': df.index[i-1],
+                    'filled': filled,
+                })
+
+    return fvgs[-20:]
+
+
+def detect_break_of_structure(df, lookback=5):
+    """Detect Break of Structure — when price breaks a swing high (bullish BOS) or swing low (bearish BOS)."""
+    bos_list = []
+    if len(df) < lookback * 2 + 1:
+        return bos_list
+
+    highs = df['High'].values
+    lows = df['Low'].values
+    closes = df['Close'].values
+
+    # Find swing points
+    swing_highs = []
+    swing_lows = []
+    for i in range(lookback, len(df) - 1):
+        if highs[i] == max(highs[max(0, i-lookback):i+lookback+1]):
+            swing_highs.append((i, highs[i]))
+        if lows[i] == min(lows[max(0, i-lookback):i+lookback+1]):
+            swing_lows.append((i, lows[i]))
+
+    # Detect BOS
+    for idx_sh, level in swing_highs:
+        # Check if price breaks above this swing high
+        for k in range(idx_sh + 1, min(idx_sh + 20, len(df))):
+            if closes[k] > level:
+                bos_list.append({
+                    'type': 'bullish',
+                    'level': level,
+                    'break_price': closes[k],
+                    'swing_time': df.index[idx_sh],
+                    'break_time': df.index[k],
+                })
+                break
+
+    for idx_sl, level in swing_lows:
+        for k in range(idx_sl + 1, min(idx_sl + 20, len(df))):
+            if closes[k] < level:
+                bos_list.append({
+                    'type': 'bearish',
+                    'level': level,
+                    'break_price': closes[k],
+                    'swing_time': df.index[idx_sl],
+                    'break_time': df.index[k],
+                })
+                break
+
+    return bos_list[-15:]
+
+
+def detect_liquidity_sweeps(df, lookback=5):
+    """Detect liquidity sweeps — price briefly pierces a swing level then reverses (stop hunts)."""
+    sweeps = []
+    if len(df) < lookback * 2 + 2:
+        return sweeps
+
+    highs = df['High'].values
+    lows = df['Low'].values
+    closes = df['Close'].values
+    opens = df['Open'].values
+
+    # Find swing points
+    for i in range(lookback, len(df) - 2):
+        # Swing low
+        if lows[i] == min(lows[max(0, i-lookback):i+lookback+1]):
+            level = lows[i]
+            # Check next bars for a sweep (wick below, close above)
+            for k in range(i+1, min(i+10, len(df))):
+                if lows[k] < level and closes[k] > level:
+                    sweeps.append({
+                        'type': 'bullish',  # Bullish reversal after sweeping lows
+                        'level': level,
+                        'sweep_low': lows[k],
+                        'close': closes[k],
+                        'time': df.index[k],
+                        'swing_time': df.index[i],
+                    })
+                    break
+
+        # Swing high
+        if highs[i] == max(highs[max(0, i-lookback):i+lookback+1]):
+            level = highs[i]
+            for k in range(i+1, min(i+10, len(df))):
+                if highs[k] > level and closes[k] < level:
+                    sweeps.append({
+                        'type': 'bearish',  # Bearish reversal after sweeping highs
+                        'level': level,
+                        'sweep_high': highs[k],
+                        'close': closes[k],
+                        'time': df.index[k],
+                        'swing_time': df.index[i],
+                    })
+                    break
+
+    return sweeps[-15:]
+
+
+def run_smc_analysis(mtf_data):
+    """Run full SMC analysis across multiple timeframes."""
+    results = {}
+    tf_configs = [
+        ('Daily', 'daily', 5),
+        ('4H', '4h', 5),
+        ('1H', '1h', 3),
+        ('15min', '15m', 3),
+    ]
+
+    for label, key, lb in tf_configs:
+        if key not in mtf_data:
+            continue
+        df = mtf_data[key].copy()
+
+        # Compute ATR if not present
+        if 'ATR_14' not in df.columns:
+            high_low = df['High'] - df['Low']
+            high_close = (df['High'] - df['Close'].shift()).abs()
+            low_close = (df['Low'] - df['Close'].shift()).abs()
+            tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+            df['ATR_14'] = tr.rolling(14).mean()
+
+        results[label] = {
+            'order_blocks': detect_order_blocks(df),
+            'fvgs': detect_fair_value_gaps(df),
+            'bos': detect_break_of_structure(df, lookback=lb),
+            'sweeps': detect_liquidity_sweeps(df, lookback=lb),
+        }
+
+    return results
+
+
+# ═══════════════════════════════════════════════════════════════
+# BACKTEST ENGINE — Historical Signal Evaluation
+# ═══════════════════════════════════════════════════════════════
+
+def backtest_signals(mtf_data, lookback_bars=100, max_hold_bars=20):
+    """Generate historical signals and evaluate their outcomes.
+
+    For each bar in the lookback window, we simulate what the signal engine
+    would have generated, then check if price hit TP1/TP2/TP3 or SL within
+    max_hold_bars after entry.
+    """
+    from signal_engine import detect_trend, find_sr_levels, detect_candle_patterns, find_nearby_levels, compute_volume_score, _get_session_label
+
+    results = []
+
+    if 'daily' not in mtf_data or '4h' not in mtf_data:
+        return results
+
+    entry_key = '15m' if '15m' in mtf_data else '1h'
+    if entry_key not in mtf_data:
+        return results
+
+    entry_df = detect_candle_patterns(mtf_data[entry_key])
+    daily_trend, _, _ = detect_trend(mtf_data['daily'])
+    sr_levels = find_sr_levels(mtf_data['4h'], lookback=5, merge_threshold_pct=0.4)
+
+    scan_start = max(20, len(entry_df) - lookback_bars)
+
+    for i in range(scan_start, len(entry_df) - max_hold_bars):
+        bar = entry_df.iloc[i]
+        pattern = bar['pattern']
+        pattern_bias = bar['pattern_bias']
+
+        if pattern == 'none':
+            continue
+
+        bar_price = bar['Close']
+        bar_time = entry_df.index[i]
+
+        # Session filter (same as signal engine)
+        if hasattr(bar_time, 'hour'):
+            if bar_time.hour < 7 or bar_time.hour >= 21:
+                continue
+
+        # Find nearby S/R levels
+        nearby = find_nearby_levels(sr_levels, bar_price, range_pct=1.5)
+        if not nearby:
+            continue
+
+        # Determine direction based on pattern and trend alignment
+        for level in nearby[:2]:
+            ltype = level['type']
+            lprice = level['level']
+            distance_pct = abs(bar_price - lprice) / bar_price * 100
+
+            if distance_pct > 0.8:
+                continue
+
+            direction = None
+            if ltype == 'support' and pattern_bias == 'bullish':
+                direction = 'LONG'
+            elif ltype == 'resistance' and pattern_bias == 'bearish':
+                direction = 'SHORT'
+
+            if not direction:
+                continue
+
+            # Compute entry, SL, TP
+            atr = entry_df['High'].iloc[max(0,i-14):i+1].subtract(entry_df['Low'].iloc[max(0,i-14):i+1]).mean()
+            if pd.isna(atr) or atr <= 0:
+                atr = abs(bar['High'] - bar['Low'])
+
+            if direction == 'LONG':
+                entry = bar_price
+                sl = lprice - atr * 0.5
+                tp1 = entry + atr * 1.0
+                tp2 = entry + atr * 2.0
+                tp3 = entry + atr * 3.0
+            else:
+                entry = bar_price
+                sl = lprice + atr * 0.5
+                tp1 = entry - atr * 1.0
+                tp2 = entry - atr * 2.0
+                tp3 = entry - atr * 3.0
+
+            risk = abs(entry - sl)
+            if risk <= 0:
+                continue
+
+            rr1 = abs(tp1 - entry) / risk
+
+            # Trend alignment bonus
+            trend_aligned = (direction == 'LONG' and daily_trend in ['BULLISH', 'STRONG_BULLISH']) or \
+                           (direction == 'SHORT' and daily_trend in ['BEARISH', 'STRONG_BEARISH'])
+
+            # Score
+            score = 40  # base
+            if trend_aligned:
+                score += 20
+            if pattern in ['bullish_engulfing', 'bearish_engulfing']:
+                score += 15
+            elif pattern in ['hammer', 'shooting_star']:
+                score += 10
+            if distance_pct < 0.3:
+                score += 10
+            score = min(100, score)
+
+            confidence = 'HIGH' if score >= 75 else 'MEDIUM' if score >= 55 else 'LOW'
+
+            # ── EVALUATE OUTCOME ──
+            outcome = 'OPEN'
+            exit_price = None
+            exit_time = None
+            bars_held = 0
+            max_favorable = 0
+            max_adverse = 0
+
+            for k in range(i+1, min(i + max_hold_bars + 1, len(entry_df))):
+                future_bar = entry_df.iloc[k]
+                bars_held = k - i
+
+                if direction == 'LONG':
+                    favorable = future_bar['High'] - entry
+                    adverse = entry - future_bar['Low']
+                    max_favorable = max(max_favorable, favorable)
+                    max_adverse = max(max_adverse, adverse)
+
+                    if future_bar['Low'] <= sl:
+                        outcome = 'SL'
+                        exit_price = sl
+                        exit_time = entry_df.index[k]
+                        break
+                    if future_bar['High'] >= tp3:
+                        outcome = 'TP3'
+                        exit_price = tp3
+                        exit_time = entry_df.index[k]
+                        break
+                    if future_bar['High'] >= tp2:
+                        outcome = 'TP2'
+                        exit_price = tp2
+                        exit_time = entry_df.index[k]
+                        break
+                    if future_bar['High'] >= tp1:
+                        outcome = 'TP1'
+                        exit_price = tp1
+                        exit_time = entry_df.index[k]
+                        break
+                else:
+                    favorable = entry - future_bar['Low']
+                    adverse = future_bar['High'] - entry
+                    max_favorable = max(max_favorable, favorable)
+                    max_adverse = max(max_adverse, adverse)
+
+                    if future_bar['High'] >= sl:
+                        outcome = 'SL'
+                        exit_price = sl
+                        exit_time = entry_df.index[k]
+                        break
+                    if future_bar['Low'] <= tp3:
+                        outcome = 'TP3'
+                        exit_price = tp3
+                        exit_time = entry_df.index[k]
+                        break
+                    if future_bar['Low'] <= tp2:
+                        outcome = 'TP2'
+                        exit_price = tp2
+                        exit_time = entry_df.index[k]
+                        break
+                    if future_bar['Low'] <= tp1:
+                        outcome = 'TP1'
+                        exit_price = tp1
+                        exit_time = entry_df.index[k]
+                        break
+
+            if outcome == 'OPEN':
+                # Expired without hitting any level
+                outcome = 'EXPIRED'
+                exit_price = entry_df['Close'].iloc[min(i + max_hold_bars, len(entry_df)-1)]
+                bars_held = max_hold_bars
+
+            pnl = (exit_price - entry) if direction == 'LONG' else (entry - exit_price)
+            pnl_r = pnl / risk if risk > 0 else 0
+
+            results.append({
+                'direction': direction,
+                'pattern': pattern,
+                'pattern_bias': pattern_bias,
+                'level_type': ltype,
+                'level_price': lprice,
+                'entry': entry,
+                'sl': sl,
+                'tp1': tp1,
+                'tp2': tp2,
+                'tp3': tp3,
+                'entry_time': bar_time,
+                'exit_time': exit_time,
+                'exit_price': exit_price,
+                'outcome': outcome,
+                'pnl': pnl,
+                'pnl_r': pnl_r,
+                'risk': risk,
+                'rr_ratio': rr1,
+                'bars_held': bars_held,
+                'max_favorable': max_favorable,
+                'max_adverse': max_adverse,
+                'score': score,
+                'confidence': confidence,
+                'trend_aligned': trend_aligned,
+                'session': _get_session_label(bar_time) if hasattr(bar_time, 'hour') else 'Unknown',
+            })
+
+    return results
+
+
+def compute_backtest_stats(results):
+    """Compute aggregate backtest statistics."""
+    if not results:
+        return None
+
+    total = len(results)
+    wins = [r for r in results if r['outcome'] in ('TP1', 'TP2', 'TP3')]
+    losses = [r for r in results if r['outcome'] == 'SL']
+    expired = [r for r in results if r['outcome'] == 'EXPIRED']
+
+    win_count = len(wins)
+    loss_count = len(losses)
+    win_rate = (win_count / total) * 100 if total > 0 else 0
+
+    total_pnl_r = sum(r['pnl_r'] for r in results)
+    avg_win_r = sum(r['pnl_r'] for r in wins) / win_count if win_count > 0 else 0
+    avg_loss_r = sum(r['pnl_r'] for r in losses) / loss_count if loss_count > 0 else 0
+
+    gross_profit = sum(r['pnl_r'] for r in results if r['pnl_r'] > 0)
+    gross_loss = abs(sum(r['pnl_r'] for r in results if r['pnl_r'] < 0))
+    profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf') if gross_profit > 0 else 0
+
+    # Max drawdown (in R)
+    equity_curve = []
+    running = 0
+    peak = 0
+    max_dd = 0
+    for r in sorted(results, key=lambda x: x['entry_time']):
+        running += r['pnl_r']
+        equity_curve.append(running)
+        peak = max(peak, running)
+        dd = peak - running
+        max_dd = max(max_dd, dd)
+
+    # Per-pattern stats
+    pattern_stats = {}
+    for r in results:
+        p = r['pattern']
+        if p not in pattern_stats:
+            pattern_stats[p] = {'total': 0, 'wins': 0, 'pnl_r': 0}
+        pattern_stats[p]['total'] += 1
+        if r['outcome'] in ('TP1', 'TP2', 'TP3'):
+            pattern_stats[p]['wins'] += 1
+        pattern_stats[p]['pnl_r'] += r['pnl_r']
+
+    # Per-session stats
+    session_stats = {}
+    for r in results:
+        s = r['session']
+        if s not in session_stats:
+            session_stats[s] = {'total': 0, 'wins': 0, 'pnl_r': 0}
+        session_stats[s]['total'] += 1
+        if r['outcome'] in ('TP1', 'TP2', 'TP3'):
+            session_stats[s]['wins'] += 1
+        session_stats[s]['pnl_r'] += r['pnl_r']
+
+    # Per-confidence stats
+    conf_stats = {}
+    for r in results:
+        c = r['confidence']
+        if c not in conf_stats:
+            conf_stats[c] = {'total': 0, 'wins': 0, 'pnl_r': 0}
+        conf_stats[c]['total'] += 1
+        if r['outcome'] in ('TP1', 'TP2', 'TP3'):
+            conf_stats[c]['wins'] += 1
+        conf_stats[c]['pnl_r'] += r['pnl_r']
+
+    # Avg bars held
+    avg_bars = sum(r['bars_held'] for r in results) / total if total > 0 else 0
+
+    # Best and worst trades
+    best = max(results, key=lambda r: r['pnl_r'])
+    worst = min(results, key=lambda r: r['pnl_r'])
+
+    return {
+        'total': total,
+        'wins': win_count,
+        'losses': loss_count,
+        'expired': len(expired),
+        'win_rate': win_rate,
+        'total_pnl_r': total_pnl_r,
+        'avg_win_r': avg_win_r,
+        'avg_loss_r': avg_loss_r,
+        'profit_factor': profit_factor,
+        'max_drawdown_r': max_dd,
+        'equity_curve': equity_curve,
+        'pattern_stats': pattern_stats,
+        'session_stats': session_stats,
+        'conf_stats': conf_stats,
+        'avg_bars_held': avg_bars,
+        'best_trade': best,
+        'worst_trade': worst,
+        'trend_aligned_wr': (sum(1 for r in results if r['trend_aligned'] and r['outcome'] in ('TP1','TP2','TP3')) / max(1, sum(1 for r in results if r['trend_aligned']))) * 100,
+        'counter_trend_wr': (sum(1 for r in results if not r['trend_aligned'] and r['outcome'] in ('TP1','TP2','TP3')) / max(1, sum(1 for r in results if not r['trend_aligned']))) * 100,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════
 # NEW: NEWS SENTIMENT SCORING (keyword-based fallback, no API key needed)
 # ═══════════════════════════════════════════════════════════════
 def compute_news_sentiment(news_articles):
@@ -4730,34 +5257,403 @@ def main():
                 </div>""", unsafe_allow_html=True)
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # TAB 5 — SMC ENGINE (Placeholder)
+    # TAB 5 — SMC ENGINE
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     with tab_smc:
-        st.markdown("""<div class="intel-card" style="padding:30px;text-align:center;">
-            <div style="font-size:32px;margin-bottom:12px;">🔲</div>
-            <h3 style="color:#f0b90b;margin-bottom:8px;">Smart Money Concepts Engine</h3>
-            <p style="color:#8892ab;font-size:13px;line-height:1.6;">
-                Order Blocks · Liquidity Sweeps · Break of Structure · Fair Value Gaps<br>
-                Multi-timeframe cascade: Daily → 4H → 1H → 15m → 5m<br><br>
-                <span style="color:#f59e0b;font-weight:600;">Coming Soon</span> — This module will detect institutional order flow patterns
-                across timeframes and integrate with the signal engine for higher-conviction entries.
-            </p>
+        st.markdown("""<div class="section-header" style="--section-accent: #a855f7;">
+            <span class="section-title">Smart Money Concepts</span>
+            <span class="pill pill-model">MULTI-TF</span>
         </div>""", unsafe_allow_html=True)
+
+        # Run SMC analysis using existing mtf data from signal engine
+        try:
+            smc_mtf = fetch_multi_timeframe(GOLD_TICKER)
+            smc_results = run_smc_analysis(smc_mtf) if smc_mtf else {}
+        except Exception as e:
+            smc_results = {}
+            st.warning(f"SMC analysis unavailable: {e}")
+
+        if smc_results:
+            current_price = current  # from the main scope
+
+            # ── SMC Summary Card ──
+            total_bull_ob = sum(len([ob for ob in r['order_blocks'] if ob['type'] == 'bullish' and not ob['tested']]) for r in smc_results.values())
+            total_bear_ob = sum(len([ob for ob in r['order_blocks'] if ob['type'] == 'bearish' and not ob['tested']]) for r in smc_results.values())
+            total_bull_fvg = sum(len([f for f in r['fvgs'] if f['type'] == 'bullish' and not f['filled']]) for r in smc_results.values())
+            total_bear_fvg = sum(len([f for f in r['fvgs'] if f['type'] == 'bearish' and not f['filled']]) for r in smc_results.values())
+            recent_bos = []
+            for tf, r in smc_results.items():
+                for b in r['bos'][-3:]:
+                    recent_bos.append({**b, 'tf': tf})
+            recent_sweeps = []
+            for tf, r in smc_results.items():
+                for s in r['sweeps'][-3:]:
+                    recent_sweeps.append({**s, 'tf': tf})
+
+            # SMC bias
+            bull_signals = total_bull_ob + total_bull_fvg + len([b for b in recent_bos if b['type'] == 'bullish']) + len([s for s in recent_sweeps if s['type'] == 'bullish'])
+            bear_signals = total_bear_ob + total_bear_fvg + len([b for b in recent_bos if b['type'] == 'bearish']) + len([s for s in recent_sweeps if s['type'] == 'bearish'])
+            smc_bias = "BULLISH" if bull_signals > bear_signals + 2 else "BEARISH" if bear_signals > bull_signals + 2 else "NEUTRAL"
+            smc_color = "#10b981" if smc_bias == "BULLISH" else "#ef4444" if smc_bias == "BEARISH" else "#f59e0b"
+
+            st.markdown(f"""<div class="intel-card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                    <h3>SMC Bias</h3>
+                    <span style="font-size:14px;font-weight:800;color:{smc_color};padding:4px 12px;background:{smc_color}15;border:1px solid {smc_color}33;border-radius:20px;">{smc_bias}</span>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;text-align:center;">
+                    <div style="background:rgba(16,185,129,0.06);border-radius:6px;padding:10px;">
+                        <div style="font-size:9px;color:#6b7a99;">Bullish OB</div>
+                        <div style="font-size:18px;font-weight:700;color:#10b981;">{total_bull_ob}</div>
+                        <div style="font-size:8px;color:#5a6a8a;">untested</div>
+                    </div>
+                    <div style="background:rgba(239,68,68,0.06);border-radius:6px;padding:10px;">
+                        <div style="font-size:9px;color:#6b7a99;">Bearish OB</div>
+                        <div style="font-size:18px;font-weight:700;color:#ef4444;">{total_bear_ob}</div>
+                        <div style="font-size:8px;color:#5a6a8a;">untested</div>
+                    </div>
+                    <div style="background:rgba(16,185,129,0.06);border-radius:6px;padding:10px;">
+                        <div style="font-size:9px;color:#6b7a99;">Bullish FVG</div>
+                        <div style="font-size:18px;font-weight:700;color:#10b981;">{total_bull_fvg}</div>
+                        <div style="font-size:8px;color:#5a6a8a;">unfilled</div>
+                    </div>
+                    <div style="background:rgba(239,68,68,0.06);border-radius:6px;padding:10px;">
+                        <div style="font-size:9px;color:#6b7a99;">Bearish FVG</div>
+                        <div style="font-size:18px;font-weight:700;color:#ef4444;">{total_bear_fvg}</div>
+                        <div style="font-size:8px;color:#5a6a8a;">unfilled</div>
+                    </div>
+                </div>
+            </div>""", unsafe_allow_html=True)
+
+            # ── Per-Timeframe Breakdown ──
+            for tf_label in ['Daily', '4H', '1H', '15min']:
+                if tf_label not in smc_results:
+                    continue
+                r = smc_results[tf_label]
+
+                with st.expander(f"📊 {tf_label} SMC Levels", expanded=(tf_label in ['4H', '1H'])):
+                    # Order Blocks
+                    untested_obs = [ob for ob in r['order_blocks'] if not ob['tested']]
+                    if untested_obs:
+                        st.markdown(f"<div style='font-size:11px;font-weight:700;color:#f0b90b;margin-bottom:6px;'>ORDER BLOCKS ({len(untested_obs)} untested)</div>", unsafe_allow_html=True)
+                        for ob in untested_obs[-6:]:
+                            ob_color = "#10b981" if ob['type'] == 'bullish' else "#ef4444"
+                            ob_icon = "🟢" if ob['type'] == 'bullish' else "🔴"
+                            dist = ((current_price - ob['high']) / current_price * 100) if ob['type'] == 'bullish' else ((ob['low'] - current_price) / current_price * 100)
+                            dist_text = f"{abs(dist):.1f}% away" if abs(dist) > 0.1 else "AT PRICE"
+                            ob_time = ob['time'].strftime('%b %d %H:%M') if hasattr(ob['time'], 'strftime') else str(ob['time'])
+                            st.markdown(
+                                f"<div style='display:flex;justify-content:space-between;padding:6px 10px;background:rgba(15,20,40,0.5);border-left:3px solid {ob_color};border-radius:4px;margin-bottom:4px;'>"
+                                f"<span style='font-size:11px;color:#e2e8f0;'>{ob_icon} {ob['type'].upper()} OB: ${ob['low']:,.0f} — ${ob['high']:,.0f}</span>"
+                                f"<span style='font-size:10px;color:{ob_color};'>{dist_text} · {ob_time}</span>"
+                                f"</div>", unsafe_allow_html=True)
+
+                    # Fair Value Gaps
+                    unfilled_fvgs = [f for f in r['fvgs'] if not f['filled']]
+                    if unfilled_fvgs:
+                        st.markdown(f"<div style='font-size:11px;font-weight:700;color:#f0b90b;margin:10px 0 6px;'>FAIR VALUE GAPS ({len(unfilled_fvgs)} unfilled)</div>", unsafe_allow_html=True)
+                        for fvg in unfilled_fvgs[-6:]:
+                            fvg_color = "#10b981" if fvg['type'] == 'bullish' else "#ef4444"
+                            fvg_icon = "△" if fvg['type'] == 'bullish' else "▽"
+                            fvg_time = fvg['time'].strftime('%b %d %H:%M') if hasattr(fvg['time'], 'strftime') else str(fvg['time'])
+                            st.markdown(
+                                f"<div style='display:flex;justify-content:space-between;padding:6px 10px;background:rgba(15,20,40,0.5);border-left:3px solid {fvg_color};border-radius:4px;margin-bottom:4px;'>"
+                                f"<span style='font-size:11px;color:#e2e8f0;'>{fvg_icon} {fvg['type'].upper()} FVG: ${fvg['lower']:,.0f} — ${fvg['upper']:,.0f} (${fvg['size']:,.0f})</span>"
+                                f"<span style='font-size:10px;color:#6b7a99;'>{fvg_time}</span>"
+                                f"</div>", unsafe_allow_html=True)
+
+                    # Break of Structure
+                    if r['bos']:
+                        st.markdown(f"<div style='font-size:11px;font-weight:700;color:#f0b90b;margin:10px 0 6px;'>BREAK OF STRUCTURE ({len(r['bos'][-5:])} recent)</div>", unsafe_allow_html=True)
+                        for b in r['bos'][-5:]:
+                            b_color = "#10b981" if b['type'] == 'bullish' else "#ef4444"
+                            b_icon = "⬆" if b['type'] == 'bullish' else "⬇"
+                            b_time = b['break_time'].strftime('%b %d %H:%M') if hasattr(b['break_time'], 'strftime') else str(b['break_time'])
+                            st.markdown(
+                                f"<div style='display:flex;justify-content:space-between;padding:6px 10px;background:rgba(15,20,40,0.5);border-left:3px solid {b_color};border-radius:4px;margin-bottom:4px;'>"
+                                f"<span style='font-size:11px;color:#e2e8f0;'>{b_icon} {b['type'].upper()} BOS at ${b['level']:,.0f}</span>"
+                                f"<span style='font-size:10px;color:#6b7a99;'>{b_time}</span>"
+                                f"</div>", unsafe_allow_html=True)
+
+                    # Liquidity Sweeps
+                    if r['sweeps']:
+                        st.markdown(f"<div style='font-size:11px;font-weight:700;color:#f0b90b;margin:10px 0 6px;'>LIQUIDITY SWEEPS ({len(r['sweeps'][-5:])} recent)</div>", unsafe_allow_html=True)
+                        for sw in r['sweeps'][-5:]:
+                            sw_color = "#10b981" if sw['type'] == 'bullish' else "#ef4444"
+                            sw_icon = "💧"
+                            sw_time = sw['time'].strftime('%b %d %H:%M') if hasattr(sw['time'], 'strftime') else str(sw['time'])
+                            sweep_price = sw.get('sweep_low', sw.get('sweep_high', sw['level']))
+                            st.markdown(
+                                f"<div style='display:flex;justify-content:space-between;padding:6px 10px;background:rgba(15,20,40,0.5);border-left:3px solid {sw_color};border-radius:4px;margin-bottom:4px;'>"
+                                f"<span style='font-size:11px;color:#e2e8f0;'>{sw_icon} {sw['type'].upper()} sweep at ${sw['level']:,.0f} (pierced ${sweep_price:,.0f})</span>"
+                                f"<span style='font-size:10px;color:#6b7a99;'>{sw_time}</span>"
+                                f"</div>", unsafe_allow_html=True)
+
+                    if not untested_obs and not unfilled_fvgs and not r['bos'] and not r['sweeps']:
+                        st.markdown("<div style='color:#5a6a8a;font-size:11px;padding:8px;'>No SMC patterns detected on this timeframe.</div>", unsafe_allow_html=True)
+
+            # ── Confluence Zones ──
+            st.markdown("""<div class="section-header" style="--section-accent: #f0b90b; margin-top: 16px;">
+                <span class="section-title">Confluence Zones</span>
+                <span class="pill pill-data">HIGH PROBABILITY</span>
+            </div>""", unsafe_allow_html=True)
+
+            # Find price levels where multiple SMC signals align
+            all_levels = []
+            for tf, r in smc_results.items():
+                for ob in r['order_blocks']:
+                    if not ob['tested']:
+                        all_levels.append({'price': (ob['high'] + ob['low'])/2, 'type': ob['type'], 'source': f'{tf} OB', 'range': (ob['low'], ob['high'])})
+                for fvg in r['fvgs']:
+                    if not fvg['filled']:
+                        all_levels.append({'price': (fvg['upper'] + fvg['lower'])/2, 'type': fvg['type'], 'source': f'{tf} FVG', 'range': (fvg['lower'], fvg['upper'])})
+
+            # Cluster nearby levels (within 0.5%)
+            clusters = []
+            used = set()
+            for i, lv in enumerate(all_levels):
+                if i in used:
+                    continue
+                cluster = [lv]
+                used.add(i)
+                for j, lv2 in enumerate(all_levels):
+                    if j in used:
+                        continue
+                    if abs(lv['price'] - lv2['price']) / lv['price'] < 0.005:
+                        cluster.append(lv2)
+                        used.add(j)
+                if len(cluster) >= 2:
+                    clusters.append(cluster)
+
+            if clusters:
+                for cl in sorted(clusters, key=lambda x: abs(current_price - x[0]['price']))[:5]:
+                    cl_price = sum(l['price'] for l in cl) / len(cl)
+                    cl_types = set(l['type'] for l in cl)
+                    cl_bias = "BULLISH" if cl_types == {'bullish'} else "BEARISH" if cl_types == {'bearish'} else "MIXED"
+                    cl_color = "#10b981" if cl_bias == "BULLISH" else "#ef4444" if cl_bias == "BEARISH" else "#f59e0b"
+                    sources = " + ".join([l['source'] for l in cl])
+                    dist_pct = (cl_price - current_price) / current_price * 100
+
+                    st.markdown(
+                        f"<div style='background:rgba(240,185,11,0.04);border:1px solid {cl_color}33;border-radius:8px;padding:10px 14px;margin-bottom:6px;'>"
+                        f"<div style='display:flex;justify-content:space-between;align-items:center;'>"
+                        f"<span style='font-size:13px;font-weight:700;color:{cl_color};'>{cl_bias} zone ${cl_price:,.0f}</span>"
+                        f"<span style='font-size:10px;color:#6b7a99;'>{dist_pct:+.1f}% from price · {len(cl)} confluences</span>"
+                        f"</div>"
+                        f"<div style='font-size:10px;color:#94a3b8;margin-top:4px;'>{sources}</div>"
+                        f"</div>", unsafe_allow_html=True)
+            else:
+                st.markdown("<div style='color:#5a6a8a;font-size:11px;padding:12px;text-align:center;'>No high-confluence zones detected at current price levels.</div>", unsafe_allow_html=True)
+
+        else:
+            st.info("SMC analysis requires multi-timeframe data. Waiting for data fetch...")
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # TAB 6 — BACKTEST ENGINE (Placeholder)
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # TAB — BACKTEST ENGINE
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     with tab_backtest:
-        st.markdown("""<div class="intel-card" style="padding:30px;text-align:center;">
-            <div style="font-size:32px;margin-bottom:12px;">📈</div>
-            <h3 style="color:#f0b90b;margin-bottom:8px;">Signal Backtesting Engine</h3>
-            <p style="color:#8892ab;font-size:13px;line-height:1.6;">
-                Win Rate · Average R:R · Max Drawdown · Profit Factor<br>
-                Per-pattern breakdown · Session performance · Equity curve<br><br>
-                <span style="color:#f59e0b;font-weight:600;">Coming Soon</span> — This module will backtest all signal engine patterns
-                against 3-6 months of historical data and show which setups actually perform.
-            </p>
+        st.markdown("""<div class="section-header" style="--section-accent: #3b82f6;">
+            <span class="section-title">Signal Backtest</span>
+            <span class="pill pill-model">HISTORICAL</span>
         </div>""", unsafe_allow_html=True)
+
+        # Run backtest
+        try:
+            bt_mtf = fetch_multi_timeframe(GOLD_TICKER)
+            bt_results = backtest_signals(bt_mtf, lookback_bars=200, max_hold_bars=20) if bt_mtf else []
+            bt_stats = compute_backtest_stats(bt_results) if bt_results else None
+        except Exception as e:
+            bt_results = []
+            bt_stats = None
+            st.warning(f"Backtest engine error: {e}")
+
+        if bt_stats:
+            # ── Summary KPIs ──
+            wr_color = "#10b981" if bt_stats['win_rate'] >= 50 else "#ef4444"
+            pf_color = "#10b981" if bt_stats['profit_factor'] >= 1.5 else "#f59e0b" if bt_stats['profit_factor'] >= 1.0 else "#ef4444"
+            pnl_color = "#10b981" if bt_stats['total_pnl_r'] > 0 else "#ef4444"
+
+            st.markdown(f"""<div class="intel-card">
+                <h3 style="margin-bottom:14px;">Performance Summary <span class="pill pill-data">{bt_stats['total']} TRADES</span></h3>
+                <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;text-align:center;">
+                    <div style="background:rgba(16,185,129,0.06);border-radius:8px;padding:12px;">
+                        <div style="font-size:9px;color:#6b7a99;letter-spacing:0.5px;">WIN RATE</div>
+                        <div style="font-size:22px;font-weight:800;color:{wr_color};">{bt_stats['win_rate']:.1f}%</div>
+                        <div style="font-size:10px;color:#5a6a8a;">{bt_stats['wins']}W / {bt_stats['losses']}L / {bt_stats['expired']}E</div>
+                    </div>
+                    <div style="background:rgba(59,130,246,0.06);border-radius:8px;padding:12px;">
+                        <div style="font-size:9px;color:#6b7a99;letter-spacing:0.5px;">PROFIT FACTOR</div>
+                        <div style="font-size:22px;font-weight:800;color:{pf_color};">{bt_stats['profit_factor']:.2f}</div>
+                        <div style="font-size:10px;color:#5a6a8a;">{'Profitable' if bt_stats['profit_factor'] > 1 else 'Unprofitable'}</div>
+                    </div>
+                    <div style="background:rgba(240,185,11,0.06);border-radius:8px;padding:12px;">
+                        <div style="font-size:9px;color:#6b7a99;letter-spacing:0.5px;">TOTAL P&L</div>
+                        <div style="font-size:22px;font-weight:800;color:{pnl_color};">{bt_stats['total_pnl_r']:+.1f}R</div>
+                        <div style="font-size:10px;color:#5a6a8a;">Avg win {bt_stats['avg_win_r']:.1f}R · loss {bt_stats['avg_loss_r']:.1f}R</div>
+                    </div>
+                    <div style="background:rgba(239,68,68,0.06);border-radius:8px;padding:12px;">
+                        <div style="font-size:9px;color:#6b7a99;letter-spacing:0.5px;">MAX DRAWDOWN</div>
+                        <div style="font-size:22px;font-weight:800;color:#ef4444;">{bt_stats['max_drawdown_r']:.1f}R</div>
+                        <div style="font-size:10px;color:#5a6a8a;">Avg hold: {bt_stats['avg_bars_held']:.0f} bars</div>
+                    </div>
+                </div>
+            </div>""", unsafe_allow_html=True)
+
+            # ── Equity Curve ──
+            if bt_stats['equity_curve']:
+                st.markdown("""<div class="section-header" style="--section-accent: #10b981; margin-top: 16px;">
+                    <span class="section-title">Equity Curve</span>
+                    <span class="pill pill-data">CUMULATIVE R</span>
+                </div>""", unsafe_allow_html=True)
+
+                eq = bt_stats['equity_curve']
+                max_eq = max(abs(v) for v in eq) if eq else 1
+                bar_width = max(2, min(8, 600 // len(eq))) if eq else 4
+                bars_html = ""
+                for idx_eq, val in enumerate(eq):
+                    h = abs(val) / max_eq * 60 if max_eq > 0 else 0
+                    color = "#10b981" if val >= 0 else "#ef4444"
+                    bottom = 60 if val < 0 else 60 - h
+                    bars_html += f'<div style="position:absolute;left:{idx_eq * (bar_width+1)}px;bottom:{bottom}px;width:{bar_width}px;height:{max(1,h)}px;background:{color};border-radius:1px;"></div>'
+
+                total_width = len(eq) * (bar_width + 1)
+                st.markdown(f"""<div style="position:relative;height:120px;background:rgba(15,20,40,0.4);border:1px solid #1e2745;border-radius:8px;overflow-x:auto;padding:0 8px;">
+                    <div style="position:absolute;left:0;right:0;top:60px;border-top:1px dashed #2a3550;"></div>
+                    <div style="position:relative;width:{total_width}px;height:120px;">{bars_html}</div>
+                </div>""", unsafe_allow_html=True)
+
+            # ── Trend Alignment ──
+            st.markdown(f"""<div class="intel-card" style="margin-top:16px;">
+                <h3>Trend Alignment Impact</h3>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px;">
+                    <div style="background:rgba(16,185,129,0.06);border-radius:8px;padding:12px;text-align:center;">
+                        <div style="font-size:10px;color:#6b7a99;">WITH Trend</div>
+                        <div style="font-size:20px;font-weight:700;color:#10b981;">{bt_stats['trend_aligned_wr']:.1f}%</div>
+                        <div style="font-size:9px;color:#5a6a8a;">win rate</div>
+                    </div>
+                    <div style="background:rgba(239,68,68,0.06);border-radius:8px;padding:12px;text-align:center;">
+                        <div style="font-size:10px;color:#6b7a99;">COUNTER Trend</div>
+                        <div style="font-size:20px;font-weight:700;color:#ef4444;">{bt_stats['counter_trend_wr']:.1f}%</div>
+                        <div style="font-size:9px;color:#5a6a8a;">win rate</div>
+                    </div>
+                </div>
+            </div>""", unsafe_allow_html=True)
+
+            # ── Pattern Breakdown ──
+            if bt_stats['pattern_stats']:
+                st.markdown("""<div class="section-header" style="--section-accent: #a855f7; margin-top: 16px;">
+                    <span class="section-title">Pattern Performance</span>
+                </div>""", unsafe_allow_html=True)
+
+                for pname, pdata in sorted(bt_stats['pattern_stats'].items(), key=lambda x: x[1]['pnl_r'], reverse=True):
+                    p_wr = (pdata['wins'] / pdata['total']) * 100 if pdata['total'] > 0 else 0
+                    p_color = "#10b981" if pdata['pnl_r'] > 0 else "#ef4444"
+                    p_wr_color = "#10b981" if p_wr >= 50 else "#ef4444"
+                    display_name = pname.replace('_', ' ').title()
+
+                    st.markdown(
+                        f"<div style='display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:rgba(15,20,40,0.5);border-radius:6px;margin-bottom:4px;'>"
+                        f"<span style='font-size:12px;font-weight:600;color:#e2e8f0;'>{display_name}</span>"
+                        f"<div style='display:flex;gap:16px;align-items:center;'>"
+                        f"<span style='font-size:10px;color:#6b7a99;'>{pdata['total']} trades</span>"
+                        f"<span style='font-size:11px;font-weight:700;color:{p_wr_color};'>{p_wr:.0f}% WR</span>"
+                        f"<span style='font-size:11px;font-weight:700;color:{p_color};'>{pdata['pnl_r']:+.1f}R</span>"
+                        f"</div></div>", unsafe_allow_html=True)
+
+            # ── Session Performance ──
+            if bt_stats['session_stats']:
+                st.markdown("""<div class="section-header" style="--section-accent: #f59e0b; margin-top: 16px;">
+                    <span class="section-title">Session Performance</span>
+                </div>""", unsafe_allow_html=True)
+
+                for sname, sdata in sorted(bt_stats['session_stats'].items(), key=lambda x: x[1]['pnl_r'], reverse=True):
+                    s_wr = (sdata['wins'] / sdata['total']) * 100 if sdata['total'] > 0 else 0
+                    s_color = "#10b981" if sdata['pnl_r'] > 0 else "#ef4444"
+
+                    st.markdown(
+                        f"<div style='display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:rgba(15,20,40,0.5);border-radius:6px;margin-bottom:4px;'>"
+                        f"<span style='font-size:12px;font-weight:600;color:#e2e8f0;'>{sname}</span>"
+                        f"<div style='display:flex;gap:16px;align-items:center;'>"
+                        f"<span style='font-size:10px;color:#6b7a99;'>{sdata['total']} trades</span>"
+                        f"<span style='font-size:11px;font-weight:700;color:{'#10b981' if s_wr >= 50 else '#ef4444'};'>{s_wr:.0f}% WR</span>"
+                        f"<span style='font-size:11px;font-weight:700;color:{s_color};'>{sdata['pnl_r']:+.1f}R</span>"
+                        f"</div></div>", unsafe_allow_html=True)
+
+            # ── Confidence Level Performance ──
+            if bt_stats['conf_stats']:
+                st.markdown("""<div class="section-header" style="--section-accent: #3b82f6; margin-top: 16px;">
+                    <span class="section-title">Confidence Level Performance</span>
+                </div>""", unsafe_allow_html=True)
+
+                for cname in ['HIGH', 'MEDIUM', 'LOW']:
+                    if cname not in bt_stats['conf_stats']:
+                        continue
+                    cdata = bt_stats['conf_stats'][cname]
+                    c_wr = (cdata['wins'] / cdata['total']) * 100 if cdata['total'] > 0 else 0
+                    c_color = "#10b981" if cdata['pnl_r'] > 0 else "#ef4444"
+                    c_badge = "#10b981" if cname == 'HIGH' else "#f59e0b" if cname == 'MEDIUM' else "#6b7a99"
+
+                    st.markdown(
+                        f"<div style='display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:rgba(15,20,40,0.5);border-radius:6px;margin-bottom:4px;'>"
+                        f"<span style='font-size:12px;font-weight:600;color:{c_badge};'>{cname}</span>"
+                        f"<div style='display:flex;gap:16px;align-items:center;'>"
+                        f"<span style='font-size:10px;color:#6b7a99;'>{cdata['total']} trades</span>"
+                        f"<span style='font-size:11px;font-weight:700;color:{'#10b981' if c_wr >= 50 else '#ef4444'};'>{c_wr:.0f}% WR</span>"
+                        f"<span style='font-size:11px;font-weight:700;color:{c_color};'>{cdata['pnl_r']:+.1f}R</span>"
+                        f"</div></div>", unsafe_allow_html=True)
+
+            # ── Best & Worst Trades ──
+            st.markdown("""<div class="section-header" style="--section-accent: #f0b90b; margin-top: 16px;">
+                <span class="section-title">Notable Trades</span>
+            </div>""", unsafe_allow_html=True)
+
+            best = bt_stats['best_trade']
+            worst = bt_stats['worst_trade']
+
+            col_best, col_worst = st.columns(2)
+            with col_best:
+                b_time = best['entry_time'].strftime('%b %d %H:%M') if hasattr(best['entry_time'], 'strftime') else str(best['entry_time'])
+                st.markdown(
+                    f"<div style='background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.2);border-radius:8px;padding:12px;'>"
+                    f"<div style='font-size:9px;color:#10b981;font-weight:700;letter-spacing:0.5px;margin-bottom:4px;'>BEST TRADE</div>"
+                    f"<div style='font-size:16px;font-weight:800;color:#10b981;'>{best['pnl_r']:+.1f}R</div>"
+                    f"<div style='font-size:10px;color:#94a3b8;margin-top:4px;'>{best['direction']} · {best['pattern'].replace('_',' ').title()} · {best['outcome']}</div>"
+                    f"<div style='font-size:9px;color:#6b7a99;margin-top:2px;'>{b_time} · {best['session']}</div>"
+                    f"</div>", unsafe_allow_html=True)
+
+            with col_worst:
+                w_time = worst['entry_time'].strftime('%b %d %H:%M') if hasattr(worst['entry_time'], 'strftime') else str(worst['entry_time'])
+                st.markdown(
+                    f"<div style='background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);border-radius:8px;padding:12px;'>"
+                    f"<div style='font-size:9px;color:#ef4444;font-weight:700;letter-spacing:0.5px;margin-bottom:4px;'>WORST TRADE</div>"
+                    f"<div style='font-size:16px;font-weight:800;color:#ef4444;'>{worst['pnl_r']:+.1f}R</div>"
+                    f"<div style='font-size:10px;color:#94a3b8;margin-top:4px;'>{worst['direction']} · {worst['pattern'].replace('_',' ').title()} · {worst['outcome']}</div>"
+                    f"<div style='font-size:9px;color:#6b7a99;margin-top:2px;'>{w_time} · {worst['session']}</div>"
+                    f"</div>", unsafe_allow_html=True)
+
+            # ── Recent Trade Log ──
+            with st.expander("📋 Trade Log (last 20)", expanded=False):
+                for r in sorted(bt_results, key=lambda x: x['entry_time'], reverse=True)[:20]:
+                    r_color = "#10b981" if r['pnl_r'] > 0 else "#ef4444" if r['pnl_r'] < 0 else "#6b7a99"
+                    r_time = r['entry_time'].strftime('%b %d %H:%M') if hasattr(r['entry_time'], 'strftime') else str(r['entry_time'])
+                    outcome_emoji = "✅" if r['outcome'] in ('TP1','TP2','TP3') else "❌" if r['outcome'] == 'SL' else "⏰"
+                    st.markdown(
+                        f"<div style='display:flex;justify-content:space-between;padding:5px 10px;background:rgba(15,20,40,0.4);border-radius:4px;margin-bottom:3px;border-left:2px solid {r_color};'>"
+                        f"<span style='font-size:10px;color:#8892ab;'>{r_time} · {r['direction']} · {r['pattern'].replace('_',' ').title()}</span>"
+                        f"<span style='font-size:10px;font-weight:700;color:{r_color};'>{outcome_emoji} {r['outcome']} · {r['pnl_r']:+.1f}R</span>"
+                        f"</div>", unsafe_allow_html=True)
+
+        elif bt_results is not None and len(bt_results) == 0:
+            st.markdown("""<div class="intel-card" style="padding:20px;text-align:center;">
+                <div style="font-size:24px;margin-bottom:8px;">📊</div>
+                <p style="color:#8892ab;font-size:12px;">No historical signals found in the backtest window.<br>
+                The signal engine needs multi-timeframe data with detected patterns at S/R levels.</p>
+            </div>""", unsafe_allow_html=True)
+        else:
+            st.info("Backtest engine requires multi-timeframe data. Waiting for data...")
 
     # ══════════════════════════════════════════════════
     # FOOTER (outside all tabs, at main() level)
