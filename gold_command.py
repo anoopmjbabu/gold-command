@@ -504,6 +504,59 @@ header {visibility: hidden;}
     .driver-card { min-width: 90px; padding: 8px 10px; }
 }
 
+/* ═══ Market Regime Bar ═══ */
+.regime-bar {
+    background: linear-gradient(135deg, #0a0f1e 0%, #111829 100%);
+    border-radius: 10px;
+    padding: 12px 20px;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.regime-badge {
+    font-size: 10px; font-weight: 800; padding: 4px 14px;
+    border-radius: 20px; letter-spacing: 0.8px; text-transform: uppercase;
+}
+.regime-normal { background: rgba(16,185,129,0.12); color: #10b981; border: 1px solid rgba(16,185,129,0.25); }
+.regime-elevated { background: rgba(245,158,11,0.12); color: #f59e0b; border: 1px solid rgba(245,158,11,0.25); }
+.regime-high { background: rgba(239,68,68,0.12); color: #ef4444; border: 1px solid rgba(239,68,68,0.25); animation: pulse-glow 1.5s ease-in-out infinite; }
+.regime-info {
+    display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+}
+.regime-info-item {
+    font-size: 10px; color: #8892ab;
+    display: flex; align-items: center; gap: 4px;
+}
+
+/* ═══ TradingView Alert Cards ═══ */
+.tv-alert-card {
+    background: linear-gradient(145deg, #0d1326, #111830);
+    border: 1px solid rgba(240,185,11,0.15);
+    border-left: 3px solid #f0b90b;
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    transition: border-color 0.2s ease;
+}
+.tv-alert-card:hover { border-color: rgba(240,185,11,0.3); }
+.tv-alert-time {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: #6b7a99;
+}
+.tv-alert-msg {
+    font-size: 12px; color: #e8ecf4; font-weight: 600;
+    margin-top: 4px;
+}
+.tv-alert-type {
+    font-size: 8px; font-weight: 700; padding: 2px 6px;
+    border-radius: 3px; text-transform: uppercase;
+    background: rgba(240,185,11,0.1); color: #f0b90b;
+    border: 1px solid rgba(240,185,11,0.15);
+}
+
 /* ═══ Daily Brief Card ═══ */
 .daily-brief {
     background: linear-gradient(135deg, #0d1326 0%, #131b38 50%, #0f1730 100%);
@@ -748,10 +801,12 @@ def fetch_correlated_data(period="3mo"):
     return data
 
 
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=300)
 def fetch_economic_calendar():
     """Fetch upcoming and recent economic events that impact gold from Google News RSS.
-    Returns list of dicts: [{date, title, impact, instruments}]"""
+    Improved parsing to extract actual event data + detect released vs upcoming events.
+    Returns list of dicts with structured event data including event_name, date, time_utc,
+    actual, forecast, previous, impact (HIGH/MEDIUM/LOW), currency, and gold_impact_direction."""
     # Key economic terms that move gold
     cal_feeds = [
         "https://news.google.com/rss/search?q=NFP+jobs+report+OR+non+farm+payrolls&hl=en-US&gl=US&ceid=US:en&when=7d",
@@ -816,11 +871,43 @@ def fetch_economic_calendar():
                 if not instruments:
                     instruments = ['USD']  # Default for econ data
 
+                # Try to parse actual/forecast/previous from headline
+                actual, forecast, previous = None, None, None
+                gold_impact_direction = None
+
+                # Simple headline parsing for released events: "CPI comes in at 3.1% vs 2.9% expected"
+                import re
+                if ' at ' in title_lower and ' vs ' in title_lower and '%' in title_lower:
+                    # Event has been released with data
+                    match = re.search(r'at\s+([\d\.]+%?)\s+vs\s+([\d\.]+%?)', title_lower)
+                    if match:
+                        actual = match.group(1)
+                        forecast = match.group(2)
+                        # Simple gold impact logic: if inflation data released higher than expected, bearish for gold
+                        if any(k in title_lower for k in ['cpi', 'inflation', 'pce']):
+                            try:
+                                actual_val = float(actual.rstrip('%'))
+                                forecast_val = float(forecast.rstrip('%'))
+                                gold_impact_direction = "BEARISH" if actual_val > forecast_val else "BULLISH"
+                            except:
+                                pass
+
+                # Determine if event is upcoming or released
+                is_released = (datetime.utcnow().date() - pub_date).days <= 0 and ' at ' in title_lower
+
                 events.append({
                     'date': pub_date,
                     'title': title,
+                    'event_name': title.split('—')[0].split('-')[0].strip()[:40],
+                    'time_utc': None,  # Not available from RSS
+                    'actual': actual,
+                    'forecast': forecast,
+                    'previous': previous,
                     'impact': impact,
                     'instruments': instruments,
+                    'currency': 'USD' if 'USD' in instruments else None,
+                    'gold_impact_direction': gold_impact_direction,
+                    'released': is_released,
                 })
         except Exception as e:
             logger.warning(f"Economic calendar fetch failed: {e}")
@@ -1427,6 +1514,24 @@ def load_skill_brief():
         return None
 
 
+def load_webhook_alerts():
+    """Load TradingView webhook alerts from tv_alerts.json if file exists.
+    JSON format: {"alerts": [{"time": "ISO datetime", "ticker": "XAUUSD", "message": "...", "type": "price_alert|indicator|custom"}]}
+    Returns list of alert dicts sorted by time (newest first)."""
+    try:
+        alerts_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tv_alerts.json')
+        if not os.path.exists(alerts_path):
+            return []
+        with open(alerts_path, 'r') as f:
+            data = json.load(f)
+        alerts = data.get('alerts', [])
+        # Sort by time descending (newest first)
+        alerts.sort(key=lambda x: x.get('time', ''), reverse=True)
+        return alerts[:10]  # Return last 10 alerts
+    except Exception:
+        return []
+
+
 def assess_macro_drivers(gold_df, corr_data):
     """Auto-assess macro drivers based on recent data movements.
     All drivers show: current value + 5D % change for consistency.
@@ -1836,6 +1941,68 @@ def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, 
     return brief_html, bias, bias_color, bias_bg
 
 
+def get_market_regime_html(gold_df, econ_events):
+    """Compute and render market regime status bar with volatility, event risk, and session overlap."""
+    # Current ATR vs 20-day average
+    atr_current = gold_df['ATR_14'].iloc[-1] if 'ATR_14' in gold_df.columns else 0
+    atr_20day = gold_df['ATR_14'].tail(20).mean() if 'ATR_14' in gold_df.columns else atr_current
+    atr_ratio = atr_current / atr_20day if atr_20day > 0 else 1.0
+
+    # Regime classification
+    if atr_ratio > 1.5:
+        regime = "HIGH VOLATILITY"
+        regime_badge_class = "regime-high"
+        regime_color = "#ef4444"
+    elif atr_ratio > 1.2:
+        regime = "ELEVATED"
+        regime_badge_class = "regime-elevated"
+        regime_color = "#f59e0b"
+    else:
+        regime = "NORMAL"
+        regime_badge_class = "regime-normal"
+        regime_color = "#10b981"
+
+    # Check for upcoming HIGH impact event in next 24 hours
+    next_event = None
+    if econ_events:
+        from datetime import timedelta
+        now = datetime.utcnow().date()
+        for evt in econ_events:
+            evt_date = evt.get('date')
+            if evt_date and (evt_date - now).days == 0 and evt.get('impact') == 'HIGH':
+                next_event = evt
+                break
+
+    event_text = ""
+    if next_event:
+        event_text = f'<div class="regime-info-item" style="color:#ef4444;">⚠ HIGH impact event: {next_event.get("event_name", "")[:30]}</div>'
+
+    # Check active trading session overlaps
+    now_utc = datetime.utcnow()
+    h = now_utc.hour
+    is_weekend = now_utc.weekday() >= 5
+
+    london_ny_overlap = (13 <= h < 17) and not is_weekend  # 1pm-5pm UTC = highest liquidity
+    asia_london_overlap = (8 <= h < 9) and not is_weekend
+
+    session_text = ""
+    if london_ny_overlap:
+        session_text = '<div class="regime-info-item" style="color:#10b981;">🔥 London-NY Overlap (Peak Liquidity)</div>'
+    elif asia_london_overlap:
+        session_text = '<div class="regime-info-item" style="color:#a8b2c8;">Asia-London Overlap</div>'
+
+    regime_html = (
+        f'<div class="regime-bar">'
+        f'<div class="regime-badge {regime_badge_class}">{regime} · {atr_ratio:.1f}x ATR</div>'
+        f'<div class="regime-info">'
+        f'{event_text}'
+        f'{session_text}'
+        f'</div>'
+        f'</div>'
+    )
+    return regime_html
+
+
 # ═══════════════════════════════════════════════════════════════
 # MAIN APP
 # ═══════════════════════════════════════════════════════════════
@@ -2102,6 +2269,10 @@ def main():
     # Session Clock Bar — above the Daily Brief
     session_clock_html = get_session_clock_html()
     st.markdown(session_clock_html, unsafe_allow_html=True)
+
+    # Market Regime Status Bar — shows volatility, event risk, and session overlap
+    regime_html = get_market_regime_html(gold_df, econ_events)
+    st.markdown(regime_html, unsafe_allow_html=True)
 
     brief_date = datetime.utcnow().strftime('%B %d, %Y')
     brief_card_html = (
@@ -2647,6 +2818,47 @@ def main():
     with tab_news:
 
         st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+
+        # ── TradingView Alerts Section ──
+        tv_alerts = load_webhook_alerts()
+        if tv_alerts:
+            st.markdown("""<div class="section-header" style="--section-accent: #f0b90b;">
+                <div>
+                    <span class="section-title">⚡ TradingView Alerts</span>
+                    <div style="font-size:9px;color:#5a6a8a;margin-top:4px;">Real-time price and indicator alerts from TradingView</div>
+                </div>
+                <span class="pill pill-data">WEBHOOK</span>
+            </div>""", unsafe_allow_html=True)
+
+            for alert in tv_alerts:
+                alert_time = alert.get('time', '')
+                alert_ticker = alert.get('ticker', 'UNKNOWN')
+                alert_message = alert.get('message', '')
+                alert_type = alert.get('type', 'custom')
+
+                # Format time
+                try:
+                    from datetime import datetime as dt_parse
+                    parsed_time = dt_parse.fromisoformat(alert_time.replace('Z', '+00:00'))
+                    time_str = parsed_time.strftime('%b %d, %H:%M')
+                except:
+                    time_str = alert_time[:16]
+
+                st.markdown(f"""<div class="tv-alert-card">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+                        <div style="flex:1;">
+                            <div class="tv-alert-msg">{alert_ticker}: {html_escape(alert_message[:80])}</div>
+                            <div class="tv-alert-time">{time_str}</div>
+                        </div>
+                        <div class="tv-alert-type">{alert_type.replace('_', ' ').upper()}</div>
+                    </div>
+                </div>""", unsafe_allow_html=True)
+
+            st.markdown('<div style="font-size:9px;color:#5a6a99;background:rgba(240,185,11,0.05);border-radius:6px;padding:10px 12px;margin-top:10px;">'
+                        '<b style="color:#f0b90b;">💡 How to connect:</b> Set your TradingView webhook to POST to your deployment endpoint. '
+                        'Save JSON alerts in a <code>tv_alerts.json</code> file in the repo root.</div>', unsafe_allow_html=True)
+
+        st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
         st.markdown("""<div class="section-header" style="--section-accent: #a855f7;">
             <div>
                 <span class="section-title">Volume Spike Detector</span>
@@ -2660,24 +2872,42 @@ def main():
             dir_arrow = "▲" if spike['direction'] == 'UP' else "▼"
             dir_color = "#10b981" if spike['direction'] == 'UP' else "#ef4444"
 
-            # Build the data-backed reason
-            reasons = []
+            # Build structured WHY section with labeled lines
+            why_lines = []
             econ_evts = spike.get('econ_events', [])
             asset_moves = spike.get('asset_moves', {})
+
+            # Event line with prominence
             if econ_evts:
                 top_evt = econ_evts[0]
-                reasons.append(f"{top_evt['impact']} impact: {top_evt['title'][:60]}")
+                event_label = top_evt['impact']  # HIGH, MEDIUM, LOW
+                why_lines.append(f"<div><span style='color:#f0b90b;font-weight:700;'>EVENT:</span> {event_label} impact event</div>")
+
+            # Correlated movers line
             if asset_moves:
                 big_movers = [(k, v) for k, v in asset_moves.items() if abs(v['change_pct']) > 0.5]
                 big_movers.sort(key=lambda x: abs(x[1]['change_pct']), reverse=True)
-                for m_name, m_val in big_movers[:2]:
-                    m_dir = "up" if m_val['change_pct'] > 0 else "down"
-                    reasons.append(f"{m_name} {m_dir} {abs(m_val['change_pct']):.1f}%")
-            if spike['news']:
-                reasons.append(f"News: {spike['news'][0]['title'][:50]}")
-            if not reasons:
-                reasons.append("Likely institutional flow or options/futures expiry")
-            reason_text = " · ".join(reasons[:3])
+                if big_movers:
+                    mover_text = ", ".join([f"{k} {'+' if v['change_pct'] > 0 else '-'}{abs(v['change_pct']):.1f}%" for k, v in big_movers[:2]])
+                    why_lines.append(f"<div><span style='color:#a8b2c8;font-weight:700;'>MOVERS:</span> {mover_text}</div>")
+
+            # Trading session context
+            hour = spike['date'].hour if hasattr(spike['date'], 'hour') else 12
+            if 13 <= hour <= 22:
+                session_context = "US Session"
+            elif 8 <= hour <= 16:
+                session_context = "London Session"
+            elif 0 <= hour <= 8:
+                session_context = "Asia Session"
+            else:
+                session_context = "Mixed Session"
+            why_lines.append(f"<div><span style='color:#6b7a99;font-weight:700;'>TIME:</span> {session_context}</div>")
+
+            # Fallback if no structured data
+            if not why_lines or len(why_lines) == 1:
+                why_lines.append(f"<div><span style='color:#a8b2c8;font-weight:700;'>CATALYST:</span> Institutional flow or expiry</div>")
+
+            why_html = "".join(why_lines)
 
             # Asset moves chips
             moves_chips = ""
@@ -2704,10 +2934,11 @@ def main():
                         <div style="font-size:10px;color:#f0b90b;font-weight:700;margin-top:2px;">{spike['vol_ratio']:.1f}x Avg Volume</div>
                     </div>
                 </div>
-                <div style="margin-top:8px;font-size:10px;color:#a8b2c8;line-height:1.5;">
-                    <span style="color:#f59e0b;font-weight:700;">WHY:</span> {html_escape(reason_text)}
+                <div style="margin-top:10px;font-size:10px;color:#a8b2c8;line-height:1.8;display:flex;flex-direction:column;gap:4px;">
+                    <span style="color:#f59e0b;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:0.5px;">WHY:</span>
+                    {why_html}
                 </div>
-                <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;">{moves_chips}</div>
+                <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;">{moves_chips}</div>
             </div>""", unsafe_allow_html=True)
 
         # ── Split spikes into Daily / Weekly / Monthly ──
@@ -2771,16 +3002,16 @@ def main():
                         article['_impact'] = 'LOW'
                         low_news.append(article)
 
-                # Category detection for single unified gold-impact chip
+                # Category detection — no assumption-based gold impact
                 _cat_rules = [
-                    ('Geopolitical', ['war', 'attack', 'strike', 'nuclear', 'bomb', 'missile', 'invasion', 'crisis', 'sanctions', 'conflict'], 'BULLISH', '#ef4444'),
+                    ('Geopolitical', ['war', 'attack', 'strike', 'nuclear', 'bomb', 'missile', 'invasion', 'crisis', 'sanctions', 'conflict'], None, '#ef4444'),
                     ('Fed / Rates', ['fed', 'fomc', 'powell', 'rate cut', 'rate hike', 'interest rate', 'federal reserve'], None, '#3b82f6'),
                     ('Inflation', ['inflation', 'cpi', 'pce', 'consumer price'], None, '#f59e0b'),
                     ('USD / DXY', ['dollar', 'usd', 'dxy'], None, '#10b981'),
                     ('Oil / Energy', ['oil', 'crude', 'opec', 'brent', 'wti'], None, '#8b5cf6'),
                     ('Bonds / Yields', ['bond', 'yield', 'treasury', '10-year', '10y'], None, '#3b82f6'),
                     ('Gold', ['gold', 'xau', 'bullion', 'precious metal', 'safe haven', 'gold reserve'], None, '#f0b90b'),
-                    ('Tariffs / Trade', ['tariff', 'trade war', 'trade deal'], 'BULLISH', '#f59e0b'),
+                    ('Tariffs / Trade', ['tariff', 'trade war', 'trade deal'], None, '#f59e0b'),
                 ]
 
                 def render_news_article(article):
@@ -2789,14 +3020,11 @@ def main():
                     title_lower = article['title'].lower()
                     is_breaking = any(kw in title_lower for kw in ['war', 'attack', 'strike', 'nuclear', 'missile', 'crisis'])
 
-                    # Build chips: one per matched category + one unified gold impact
+                    # Build chips: one per matched category only
                     matched_cats = []
-                    gold_impact = None  # Will be set to BULLISH or BEARISH for gold
-                    for cat_name, keywords, default_gold, cat_color in _cat_rules:
+                    for cat_name, keywords, _, cat_color in _cat_rules:
                         if any(kw in title_lower for kw in keywords):
                             matched_cats.append((cat_name, cat_color))
-                            if default_gold and not gold_impact:
-                                gold_impact = default_gold
 
                     # Build category chip(s) — max 2 to avoid clutter
                     impact_chips = ""
@@ -2804,13 +3032,6 @@ def main():
                         impact_chips += (f'<span style="font-size:9px;padding:2px 6px;border-radius:3px;'
                                          f'background:{cat_color}15;color:{cat_color};font-weight:700;">'
                                          f'{cat_name}</span> ')
-                    # Add single gold impact chip if applicable
-                    if gold_impact:
-                        g_arrow = "↑" if gold_impact == "BULLISH" else "↓"
-                        g_color = "#10b981" if gold_impact == "BULLISH" else "#ef4444"
-                        impact_chips += (f'<span style="font-size:9px;padding:2px 6px;border-radius:3px;'
-                                         f'background:{g_color}15;color:{g_color};font-weight:700;">'
-                                         f'Gold {g_arrow}</span> ')
 
                     breaking_class = ' rss-breaking' if is_breaking else ''
                     prefix = '<span style="color:#ef4444;font-weight:700;font-size:10px;">&#9889; BREAKING </span>' if is_breaking else ''
