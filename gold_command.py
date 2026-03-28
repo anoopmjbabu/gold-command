@@ -3619,7 +3619,7 @@ def main():
     # TAB NAVIGATION
     # ══════════════════════════════════════════════════
     tab_brief, tab_dashboard, tab_signals, tab_intel, tab_news, tab_smc, tab_backtest = st.tabs([
-        "📋 Daily Brief", "📊 Dashboard", "🎯 Trade Signals", "🧠 Intelligence", "📰 News & Events", "🔲 SMC Engine", "📈 Backtest"
+        "📋 Brief", "📊 Dashboard", "🎯 Trade Signals", "🧠 Intelligence", "📰 News & Events", "🔲 SMC Engine", "📈 Backtest"
     ])
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -3795,11 +3795,11 @@ def main():
 
                 # ETF flows summary
                 etf_text = ""
-                if etf_flows:
-                    for etf in etf_flows:
-                        if etf['symbol'] == 'GLD':
-                            etf_text = f'GLD flows: <b>{etf["flow_label"]}</b> (${etf["dollar_volume"]/1e6:,.0f}M). '
-                            break
+                if etf_flows and isinstance(etf_flows, dict) and 'GLD' in etf_flows:
+                    gld = etf_flows['GLD']
+                    gld_ratio = gld.get('dollar_ratio', 1.0)
+                    gld_label = "HEAVY INFLOW" if gld_ratio > 1.5 else "ABOVE AVG" if gld_ratio > 1.2 else "LIGHT" if gld_ratio < 0.7 else "NORMAL"
+                    etf_text = f'GLD flows: <b>{gld_label}</b> (${gld.get("dollar_vol", 0)/1e6:,.0f}M). '
 
                 mb_color = month_color
                 mb_bg = f"rgba({16 if month_chg >= 0 else 239},{185 if month_chg >= 0 else 68},{129 if month_chg >= 0 else 68},0.12)"
