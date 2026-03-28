@@ -1929,8 +1929,9 @@ def render_mtf_fib_html(fib_data):
 
 
 def detect_volume_spikes(df, threshold=1.5):
-    """Detect significant market moves using BOTH volume AND price-change triggers.
-    A $200 move on gold should always show up, even if yfinance volume data is spotty.
+    """Detect significant market moves using 5 independent triggers.
+    Uses BOTH ATR-relative AND absolute percentage thresholds so that
+    big moves always show up — even when ATR has expanded from recent volatility.
     """
     df = df.copy()
 
@@ -1938,33 +1939,44 @@ def detect_volume_spikes(df, threshold=1.5):
     df['change'] = df['Close'] - df['Open']
     df['change_pct'] = (df['change'] / df['Open']).abs() * 100
     df['daily_range'] = df['High'] - df['Low']
+    df['range_pct'] = (df['daily_range'] / df['Close']) * 100
+    df['close_to_close'] = (df['Close'] - df['Close'].shift(1)).abs()
+    df['close_to_close_pct'] = (df['close_to_close'] / df['Close'].shift(1)).abs() * 100
     df['range_vs_atr'] = df['daily_range'] / df['ATR_14'] if 'ATR_14' in df.columns else 1.0
 
-    # Trigger 1: Volume spike (original — volume > threshold x 20-day avg)
+    # Trigger 1: Volume spike (volume > threshold x 20-day avg)
     vol_mask = df['Vol_ratio'] >= threshold
 
-    # Trigger 2: Price-change spike (close-to-close move > 1.0x ATR — any move bigger than avg range is notable)
+    # Trigger 2: Price-change vs ATR (close-to-close move > 1.0x ATR)
     if 'ATR_14' in df.columns:
-        price_chg_abs = (df['Close'] - df['Close'].shift(1)).abs()
-        price_mask = price_chg_abs > (df['ATR_14'] * 1.0)
+        price_atr_mask = df['close_to_close'] > (df['ATR_14'] * 1.0)
     else:
-        price_mask = df['change_pct'] > 1.0  # Fallback: >1.0% move
+        price_atr_mask = pd.Series(False, index=df.index)
 
-    # Trigger 3: Intraday range spike (daily high-low range > 1.2x ATR — wider than normal day)
+    # Trigger 3: Range vs ATR (daily high-low > 1.2x ATR)
     if 'ATR_14' in df.columns:
-        range_mask = df['daily_range'] > (df['ATR_14'] * 1.2)
+        range_atr_mask = df['daily_range'] > (df['ATR_14'] * 1.2)
     else:
-        range_mask = pd.Series(False, index=df.index)
+        range_atr_mask = pd.Series(False, index=df.index)
+
+    # Trigger 4: Absolute % move (catches big moves even when ATR is inflated)
+    # >1.5% close-to-close is significant for gold regardless of ATR
+    pct_move_mask = df['close_to_close_pct'] > 1.5
+
+    # Trigger 5: Absolute % range (>2% intraday range is a big day)
+    pct_range_mask = df['range_pct'] > 2.0
 
     # Combine: any trigger qualifies
-    combined_mask = vol_mask | price_mask | range_mask
+    combined_mask = vol_mask | price_atr_mask | range_atr_mask | pct_move_mask | pct_range_mask
     spikes = df[combined_mask].copy()
 
-    # Tag the trigger reason
+    # Tag the trigger reason(s)
     spikes['trigger'] = ''
     spikes.loc[vol_mask & combined_mask, 'trigger'] += 'volume '
-    spikes.loc[price_mask & combined_mask, 'trigger'] += 'price-move '
-    spikes.loc[range_mask & combined_mask, 'trigger'] += 'range '
+    spikes.loc[price_atr_mask & combined_mask, 'trigger'] += 'price-move '
+    spikes.loc[range_atr_mask & combined_mask, 'trigger'] += 'range '
+    spikes.loc[pct_move_mask & combined_mask, 'trigger'] += 'big-% '
+    spikes.loc[pct_range_mask & combined_mask, 'trigger'] += 'wide-range '
     spikes['trigger'] = spikes['trigger'].str.strip()
 
     spikes['direction'] = spikes['change'].apply(lambda x: 'UP' if x >= 0 else 'DOWN')
