@@ -1805,22 +1805,48 @@ def get_session_clock_html():
                     f'</div>'
                 )
 
-        # Overlap detection
-        overlaps = []
-        if 'Sydney' in active_sessions and 'Tokyo' in active_sessions:
-            overlaps.append('Sydney–Tokyo')
-        if 'Tokyo' in active_sessions and 'India' in active_sessions:
-            overlaps.append('Tokyo–India')
-        if 'India' in active_sessions and 'London' in active_sessions:
-            overlaps.append('India–London')
-        if 'Tokyo' in active_sessions and 'London' in active_sessions:
-            overlaps.append('Asia–London')
-        if 'London' in active_sessions and 'New York' in active_sessions:
-            overlaps.append('London–NY (Peak Liquidity)')
-        for ov in overlaps:
+        # ── Overlap detection with explicit UTC windows ──
+        # Define all known overlaps with their UTC time ranges
+        overlap_windows = [
+            {'name': 'Sydney–Tokyo',               'start': 0*60,   'end': 6*60,   'wraps': False, 'note': 'Asia liquidity'},
+            {'name': 'Tokyo–India',                 'start': 3*60+30,'end': 9*60,   'wraps': False, 'note': 'Asia crossover'},
+            {'name': 'India–London',                'start': 7*60,   'end': 11*60+30,'wraps': False, 'note': 'Asia–Europe bridge'},
+            {'name': 'London–New York',             'start': 12*60,  'end': 16*60,  'wraps': False, 'note': 'Peak liquidity & volatility'},
+        ]
+
+        active_overlaps = []
+        upcoming_overlap = None
+        for ow in overlap_windows:
+            ow_active = False
+            if ow.get('wraps'):
+                ow_active = total_mins >= ow['start'] or total_mins < ow['end']
+            else:
+                ow_active = ow['start'] <= total_mins < ow['end']
+
+            if ow_active:
+                ends_in = countdown_mins(ow['end'])
+                active_overlaps.append((ow, ends_in))
+            elif not upcoming_overlap:
+                starts_in = countdown_mins(ow['start'])
+                upcoming_overlap = (ow, starts_in)
+
+        if active_overlaps:
+            for ow, ends_in in active_overlaps:
+                session_rows += (
+                    f'<div style="display:flex;align-items:center;gap:8px;padding:4px 0;">'
+                    f'<span class="session-badge overlap">⚡ {ow["name"]} Overlap</span>'
+                    f'<span style="font-size:9px;color:#f0b90b;font-weight:700;">ACTIVE</span>'
+                    f'<span style="font-size:9px;color:#a8b2c8;">Ends in <b style="color:#f0b90b;">{fmt_countdown(ends_in)}</b></span>'
+                    f'<span style="font-size:8px;color:#5a6a8a;">({ow["note"]})</span>'
+                    f'</div>'
+                )
+        elif upcoming_overlap:
+            ow, starts_in = upcoming_overlap
             session_rows += (
-                f'<div style="padding:3px 0;">'
-                f'<span class="session-badge overlap">⚡ {ov} Overlap Active</span>'
+                f'<div style="display:flex;align-items:center;gap:8px;padding:4px 0;">'
+                f'<span class="session-badge inactive">⏳ Next: {ow["name"]}</span>'
+                f'<span style="font-size:9px;color:#5a6a8a;">Starts in {fmt_countdown(starts_in)}</span>'
+                f'<span style="font-size:8px;color:#5a6a8a;">({ow["note"]})</span>'
                 f'</div>'
             )
 
