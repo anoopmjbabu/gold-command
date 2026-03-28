@@ -2634,34 +2634,59 @@ def main():
                 <span class="pill pill-live">RSS · AUTO-REFRESH</span>
             </div>""", unsafe_allow_html=True)
             if news:
-                # Impact classification rules
+                # Compute ACTUAL market moves for data-driven chips
+                _actual_moves = {}
+                # Gold daily change
+                if len(gold_df) >= 2:
+                    g_pct = ((gold_df['Close'].iloc[-1] / gold_df['Close'].iloc[-2]) - 1) * 100
+                    _actual_moves['Gold'] = g_pct
+                # Correlated instruments
+                for cname, cdf in corr_data.items():
+                    if len(cdf) >= 2:
+                        c_pct = ((cdf['Close'].iloc[-1] / cdf['Close'].iloc[-2]) - 1) * 100
+                        _actual_moves[cname] = c_pct
+
+                def _make_actual_chip(label, pct, icon_html):
+                    """Create a chip showing actual market move direction + %."""
+                    if pct >= 0:
+                        color, arrow = "#10b981", "&#9650;"
+                    else:
+                        color, arrow = "#ef4444", "&#9660;"
+                    return (f'<span class="rss-chip" style="background:{color}12;color:{color};">'
+                            f'{icon_html} {label} {arrow} {pct:+.1f}%</span>')
+
+                # Category rules (for classification only — chips are data-driven)
                 _impact_rules = {
                     'geopolitical': {
                         'keywords': ['war', 'attack', 'strike', 'nuclear', 'bomb', 'missile', 'invasion', 'crisis', 'emergency', 'sanctions', 'conflict', 'geopolitical', 'tariff', 'trade war'],
-                        'name': 'Geopolitical', 'icon': '&#9888;', 'color': '#ef4444',
-                        'impacts': [('Gold', '&#8593;', '#10b981'), ('Stocks', '&#8595;', '#ef4444'), ('VIX', '&#8593;', '#f59e0b')],
-                        'level': 'high',
+                        'level': 'high', 'show_assets': ['Gold', 'S&P 500', 'VIX'],
+                        'is_breaking': True,
                     },
                     'dollar': {
                         'keywords': ['dollar', 'usd', 'dxy', 'fed', 'federal reserve', 'interest rate', 'rate hike', 'rate cut', 'fomc', 'powell'],
-                        'name': 'Dollar', 'icon': '&#36;', 'color': '#10b981', 'level': 'high',
+                        'level': 'high', 'show_assets': ['Gold', 'DXY'],
                     },
                     'gold': {
                         'keywords': ['gold', 'xau', 'bullion', 'precious metal', 'safe haven', 'gold price', 'gold demand', 'gold reserve'],
-                        'name': 'Gold', 'icon': '&#129351;', 'color': '#f0b90b', 'level': 'medium',
+                        'level': 'medium', 'show_assets': ['Gold'],
                     },
                     'bonds': {
                         'keywords': ['bond', 'yield', 'treasury', '10-year', '10y', 'debt', 'sovereign'],
-                        'name': 'Bonds', 'icon': '&#128196;', 'color': '#3b82f6', 'level': 'medium',
+                        'level': 'medium', 'show_assets': ['Gold', 'US 10Y'],
                     },
                     'oil': {
                         'keywords': ['oil', 'crude', 'opec', 'brent', 'wti', 'petroleum', 'energy'],
-                        'name': 'Oil', 'icon': '&#128167;', 'color': '#8b5cf6', 'level': 'medium',
+                        'level': 'medium', 'show_assets': ['Gold', 'Crude Oil'],
                     },
                     'stocks': {
                         'keywords': ['stock', 's&p', 'nasdaq', 'dow', 'equity', 'wall street', 'rally', 'selloff', 'correction', 'bear market', 'bull market'],
-                        'name': 'Stocks', 'icon': '&#128200;', 'color': '#f59e0b', 'level': 'low',
+                        'level': 'low', 'show_assets': ['Gold', 'S&P 500'],
                     },
+                }
+
+                _asset_icons = {
+                    'Gold': '&#129351;', 'DXY': '&#36;', 'S&P 500': '&#128200;',
+                    'VIX': '&#9888;', 'Crude Oil': '&#128167;', 'US 10Y': '&#128196;',
                 }
 
                 # Classify each article into high/medium/low
@@ -2673,25 +2698,28 @@ def main():
                     title_lower = article['title'].lower()
                     safe_link = article['link'] if article['link'].startswith(('http://', 'https://')) else '#'
 
-                    # Detect impacts
+                    # Detect category + build data-driven chips
                     chips_html = ""
                     is_breaking = False
                     highest_level = 'low'
                     level_priority = {'high': 3, 'medium': 2, 'low': 1}
+                    shown_assets = set()
+                    chip_count = 0
 
                     for cat_key, rule in _impact_rules.items():
                         if any(kw in title_lower for kw in rule['keywords']):
                             if level_priority.get(rule['level'], 0) > level_priority.get(highest_level, 0):
                                 highest_level = rule['level']
-                            if cat_key == 'geopolitical':
+                            if rule.get('is_breaking'):
                                 is_breaking = True
-                                for instr, direction, dcolor in rule.get('impacts', []):
-                                    chips_html += (f'<span class="rss-chip" style="background:{dcolor}15;color:{dcolor};">'
-                                                   f'{instr} {direction}</span>')
-                            else:
-                                c = rule['color']
-                                chips_html += (f'<span class="rss-chip" style="background:{c}15;color:{c};">'
-                                               f'{rule["icon"]} {rule["name"]}</span>')
+                            # Add actual-move chips for relevant assets (max 3 chips)
+                            for asset in rule.get('show_assets', []):
+                                if asset not in shown_assets and chip_count < 3:
+                                    shown_assets.add(asset)
+                                    pct = _actual_moves.get(asset)
+                                    if pct is not None:
+                                        chips_html += _make_actual_chip(asset, pct, _asset_icons.get(asset, ''))
+                                        chip_count += 1
 
                     # Build article HTML
                     breaking_class = ' rss-breaking-bar' if is_breaking else ''
