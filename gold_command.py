@@ -1127,10 +1127,11 @@ def compute_indicators(df):
     avg_gain = gain.ewm(alpha=1.0/14, min_periods=14, adjust=False).mean()
     avg_loss = loss.ewm(alpha=1.0/14, min_periods=14, adjust=False).mean()
     # Safe division: use numpy to avoid pandas .replace() issues on 3.14
-    avg_loss_vals = avg_loss.values.copy().astype(float)
+    avg_loss_vals = avg_loss.values.ravel().copy().astype(np.float64)
     avg_loss_vals[avg_loss_vals == 0] = np.nan
-    rs = avg_gain.values.astype(float) / avg_loss_vals
-    df['RSI'] = pd.Series(100.0 - (100.0 / (1.0 + rs)), index=df.index).fillna(50.0)
+    rs = avg_gain.values.ravel().astype(np.float64) / avg_loss_vals
+    rsi_arr = np.nan_to_num(100.0 - (100.0 / (1.0 + rs)), nan=50.0)
+    df['RSI'] = pd.array(rsi_arr.ravel(), dtype='float64')
 
     # MACD
     df['MACD'] = df['EMA_12'] - df['EMA_26']
@@ -1145,28 +1146,29 @@ def compute_indicators(df):
     df['ATR_14'] = tr.rolling(14).mean()
 
     # Volume analysis — handle NaN/zero volume (common with futures data)
-    # Use numpy arrays directly to avoid all pandas type-coercion issues
+    # Convert to Python list first, then flat numpy — avoids ALL pandas dtype issues
     try:
-        raw_vol = df['Volume'].values
-        vol_arr = np.array(raw_vol, dtype=float)
-        vol_arr = np.where(np.isnan(vol_arr), 0.0, vol_arr)
-    except (ValueError, TypeError):
-        vol_arr = np.zeros(len(df), dtype=float)
-    df['Volume'] = vol_arr
+        vol_list = df['Volume'].tolist()
+        vol_arr = np.array([float(v) if v is not None else 0.0 for v in vol_list], dtype=np.float64)
+        vol_arr = np.nan_to_num(vol_arr, nan=0.0).ravel()
+    except Exception:
+        vol_arr = np.zeros(len(df), dtype=np.float64)
+    df['Volume'] = pd.array(vol_arr, dtype='float64')
 
     # Rolling 20-day volume average (manual numpy to avoid pandas issues)
-    vol_sma_arr = np.full(len(df), np.nan)
-    for i in range(19, len(df)):
+    n = len(vol_arr)
+    vol_sma_arr = np.full(n, np.nan, dtype=np.float64)
+    for i in range(19, n):
         vol_sma_arr[i] = np.mean(vol_arr[i-19:i+1])
-    df['Vol_SMA_20'] = vol_sma_arr
 
-    # Volume ratio — safe division
-    vol_ratio_arr = np.where(
-        (np.isnan(vol_sma_arr)) | (vol_sma_arr == 0),
-        0.0,
-        vol_arr / vol_sma_arr
-    )
-    df['Vol_ratio'] = vol_ratio_arr
+    # Volume ratio — safe division, all as flat 1D float64 arrays
+    vol_ratio_arr = np.zeros(n, dtype=np.float64)
+    for i in range(n):
+        if not np.isnan(vol_sma_arr[i]) and vol_sma_arr[i] > 0:
+            vol_ratio_arr[i] = vol_arr[i] / vol_sma_arr[i]
+
+    df['Vol_SMA_20'] = pd.array(vol_sma_arr, dtype='Float64')
+    df['Vol_ratio'] = pd.array(vol_ratio_arr, dtype='float64')
 
     return df
 
