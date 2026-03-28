@@ -65,7 +65,11 @@ st.markdown("""
 /* ═══ Global Reset ═══ */
 .stApp { background: #060a12; }
 section[data-testid="stSidebar"] { background: #0b1022; }
-h1,h2,h3,h4,h5,h6,p,span,div,li { font-family: 'Inter', sans-serif !important; }
+h1,h2,h3,h4,h5,h6,p,li { font-family: 'Inter', sans-serif !important; }
+div:not([data-testid]) > span:not([data-testid]), .stMarkdown span, .stMarkdown div, .stMarkdown p, .intel-card, .intel-card * { font-family: 'Inter', sans-serif !important; }
+/* Protect Streamlit expander icons from font override */
+[data-testid="stExpander"] summary svg,
+[data-testid="stExpander"] summary span[data-testid] { font-family: inherit !important; }
 code, .stMetricValue { font-family: 'JetBrains Mono', monospace !important; }
 
 /* ═══ Custom Scrollbar ═══ */
@@ -5356,7 +5360,44 @@ def main():
                 </div>
             </div>""", unsafe_allow_html=True)
 
-            # ── Per-Timeframe Breakdown ──
+            # ── Bias Reconciliation ──
+            try:
+                _brief_bias_val = brief_bias if 'brief_bias' in dir() else None
+            except:
+                _brief_bias_val = None
+
+            if _brief_bias_val:
+                # Compare brief bias with institutional bias
+                brief_norm = _brief_bias_val.upper().strip()
+                smc_norm = smc_bias.upper().strip()
+                if ('BULL' in brief_norm and 'BEAR' in smc_norm) or ('BEAR' in brief_norm and 'BULL' in smc_norm):
+                    recon_color = "#f59e0b"
+                    recon_msg = (
+                        f"The Daily Brief says <b style='color:#f0b90b;'>{brief_norm}</b> (based on price trend, RSI, and macro factors) "
+                        f"but institutional footprints suggest <b style='color:{smc_color};'>{smc_norm}</b> (based on where big money placed orders). "
+                        f"<b>What this means:</b> The trend may be shifting. Institutions often position BEFORE the trend changes. "
+                        f"Be cautious with trend-following trades and watch the nearest zones for confirmation."
+                    )
+                elif brief_norm == smc_norm or ('BULL' in brief_norm and 'BULL' in smc_norm) or ('BEAR' in brief_norm and 'BEAR' in smc_norm):
+                    recon_color = "#10b981"
+                    recon_msg = (
+                        f"Both the Daily Brief (<b>{brief_norm}</b>) and institutional positioning (<b>{smc_norm}</b>) agree. "
+                        f"<b>What this means:</b> Higher confidence in the current direction. Trend-following trades have institutional backing."
+                    )
+                else:
+                    recon_color = "#6b7a99"
+                    recon_msg = (
+                        f"Daily Brief: <b>{brief_norm}</b> | Institutions: <b>{smc_norm}</b>. "
+                        f"<b>What this means:</b> No strong directional conviction from either side. Wait for clarity before taking positions."
+                    )
+
+                st.markdown(
+                    f"<div style='background:rgba(15,20,40,0.6);border:1px solid {recon_color}33;border-radius:8px;padding:12px 16px;margin-top:12px;'>"
+                    f"<div style='font-size:11px;font-weight:700;color:{recon_color};margin-bottom:6px;'>BRIEF vs INSTITUTIONS</div>"
+                    f"<div style='font-size:11px;color:#cbd5e1;line-height:1.6;'>{recon_msg}</div>"
+                    f"</div>", unsafe_allow_html=True)
+
+            # ── Per-Timeframe labels ──
             tf_labels_map = {
                 'Daily': ('Daily (Big Picture)', 'Strongest levels — these zones take days/weeks to form'),
                 '4H': ('4-Hour (Swing)', 'Medium-term zones — good for swing trade entries'),
@@ -5364,141 +5405,144 @@ def main():
                 '15min': ('15-Minute (Scalp)', 'Fast-moving zones — for scalpers and quick reactions')
             }
 
-            for tf_label in ['Daily', '4H', '1H', '15min']:
-                if tf_label not in smc_results:
-                    continue
-                r = smc_results[tf_label]
-                tf_display, tf_desc = tf_labels_map[tf_label]
+            # ── Nearest Active Zones (What matters NOW) ──
+            st.markdown("""<div class="section-header" style="--section-accent: #f59e0b; margin-top: 16px;">
+                <span class="section-title">Nearest Active Zones</span>
+                <span class="pill pill-data">WATCH THESE</span>
+            </div>""", unsafe_allow_html=True)
+            st.markdown("<div style='font-size:11px;color:#94a3b8;margin-bottom:10px;'>These are the closest untouched institutional zones to current price. If price reaches one, expect a reaction (bounce or reversal).</div>", unsafe_allow_html=True)
 
-                with st.expander(f"{tf_display}", expanded=(tf_label in ['4H', '1H'])):
-                    st.markdown(f"<div style='font-size:10px;color:#6b7a99;margin-bottom:10px;'>{tf_desc}</div>", unsafe_allow_html=True)
+            # Collect ALL active zones across timeframes, sorted by distance
+            active_zones = []
+            for tf, r in smc_results.items():
+                for ob in r['order_blocks']:
+                    if not ob['tested']:
+                        mid = (ob['high'] + ob['low']) / 2
+                        dist = abs(current_price - mid) / current_price * 100
+                        direction = "above" if mid > current_price else "below"
+                        active_zones.append({
+                            'label': f"{'BUY' if ob['type'] == 'bullish' else 'SELL'} ZONE",
+                            'range': f"${ob['low']:,.0f} - ${ob['high']:,.0f}",
+                            'color': "#10b981" if ob['type'] == 'bullish' else "#ef4444",
+                            'dist': dist, 'direction': direction, 'tf': tf, 'mid': mid,
+                            'action': f"If price drops here, look for a bounce UP" if ob['type'] == 'bullish' else f"If price rises here, look for a rejection DOWN",
+                            'time': ob['time'].strftime('%b %d') if hasattr(ob['time'], 'strftime') else str(ob['time'])
+                        })
+                for fvg in r['fvgs']:
+                    if not fvg['filled']:
+                        mid = (fvg['upper'] + fvg['lower']) / 2
+                        dist = abs(current_price - mid) / current_price * 100
+                        direction = "above" if mid > current_price else "below"
+                        active_zones.append({
+                            'label': f"PRICE GAP ({'up' if fvg['type'] == 'bullish' else 'down'})",
+                            'range': f"${fvg['lower']:,.0f} - ${fvg['upper']:,.0f}",
+                            'color': "#3b82f6",
+                            'dist': dist, 'direction': direction, 'tf': tf, 'mid': mid,
+                            'action': f"Price may pull back here to fill this ${fvg['size']:,.0f} gap before continuing",
+                            'time': fvg['time'].strftime('%b %d') if hasattr(fvg['time'], 'strftime') else str(fvg['time'])
+                        })
 
-                    # ── Order Blocks (Buy/Sell Zones) ──
+            active_zones.sort(key=lambda x: x['dist'])
+
+            # Show nearest 3 above and 3 below
+            zones_above = [z for z in active_zones if z['direction'] == 'above'][:3]
+            zones_below = [z for z in active_zones if z['direction'] == 'below'][:3]
+
+            if zones_above:
+                st.markdown("<div style='font-size:10px;font-weight:700;color:#f59e0b;margin:8px 0 4px;'>ABOVE current price (resistance/sell pressure):</div>", unsafe_allow_html=True)
+                for z in zones_above:
+                    nearby_badge = "<span style='font-size:8px;font-weight:700;color:#f59e0b;background:rgba(245,158,11,0.15);padding:1px 6px;border-radius:8px;margin-left:6px;'>NEARBY</span>" if z['dist'] <= 0.5 else ""
+                    st.markdown(
+                        f"<div style='padding:10px 14px;background:rgba(15,20,40,0.5);border-left:3px solid {z['color']};border-radius:4px;margin-bottom:6px;'>"
+                        f"<div style='display:flex;justify-content:space-between;align-items:center;'>"
+                        f"<span style='font-size:12px;font-weight:700;color:{z['color']};'>{z['label']}: {z['range']}{nearby_badge}</span>"
+                        f"<span style='font-size:10px;color:#6b7a99;'>{z['dist']:.1f}% above | {z['tf']} | {z['time']}</span>"
+                        f"</div>"
+                        f"<div style='font-size:11px;color:#cbd5e1;margin-top:5px;'>{z['action']}</div>"
+                        f"</div>", unsafe_allow_html=True)
+
+            if zones_below:
+                st.markdown("<div style='font-size:10px;font-weight:700;color:#f59e0b;margin:12px 0 4px;'>BELOW current price (support/buy pressure):</div>", unsafe_allow_html=True)
+                for z in zones_below:
+                    nearby_badge = "<span style='font-size:8px;font-weight:700;color:#f59e0b;background:rgba(245,158,11,0.15);padding:1px 6px;border-radius:8px;margin-left:6px;'>NEARBY</span>" if z['dist'] <= 0.5 else ""
+                    st.markdown(
+                        f"<div style='padding:10px 14px;background:rgba(15,20,40,0.5);border-left:3px solid {z['color']};border-radius:4px;margin-bottom:6px;'>"
+                        f"<div style='display:flex;justify-content:space-between;align-items:center;'>"
+                        f"<span style='font-size:12px;font-weight:700;color:{z['color']};'>{z['label']}: {z['range']}{nearby_badge}</span>"
+                        f"<span style='font-size:10px;color:#6b7a99;'>{z['dist']:.1f}% below | {z['tf']} | {z['time']}</span>"
+                        f"</div>"
+                        f"<div style='font-size:11px;color:#cbd5e1;margin-top:5px;'>{z['action']}</div>"
+                        f"</div>", unsafe_allow_html=True)
+
+            if not zones_above and not zones_below:
+                st.markdown("<div style='color:#5a6a8a;font-size:11px;padding:12px;text-align:center;'>No active zones detected near current price.</div>", unsafe_allow_html=True)
+
+            # ── Recent Market Events ──
+            all_bos = []
+            all_sweeps = []
+            for tf, r in smc_results.items():
+                for b in r['bos'][-3:]:
+                    all_bos.append({**b, 'tf': tf})
+                for s in r['sweeps'][-3:]:
+                    all_sweeps.append({**s, 'tf': tf})
+
+            if all_bos or all_sweeps:
+                st.markdown("""<div class="section-header" style="--section-accent: #f59e0b; margin-top: 16px;">
+                    <span class="section-title">Recent Market Events</span>
+                    <span class="pill pill-data">CONTEXT</span>
+                </div>""", unsafe_allow_html=True)
+                st.markdown("<div style='font-size:11px;color:#94a3b8;margin-bottom:8px;'>Key events that explain the current market structure.</div>", unsafe_allow_html=True)
+
+                for b in sorted(all_bos, key=lambda x: str(x.get('break_time', '')), reverse=True)[:4]:
+                    b_color = "#10b981" if b['type'] == 'bullish' else "#ef4444"
+                    b_time = b['break_time'].strftime('%b %d %H:%M') if hasattr(b['break_time'], 'strftime') else str(b['break_time'])
+                    b_label = f"Broke ABOVE ${b['level']:,.0f}" if b['type'] == 'bullish' else f"Broke BELOW ${b['level']:,.0f}"
+                    b_meaning = "Buyers broke a key high — bullish momentum" if b['type'] == 'bullish' else "Sellers broke a key low — bearish momentum"
+                    st.markdown(
+                        f"<div style='padding:8px 12px;background:rgba(15,20,40,0.5);border-left:3px solid {b_color};border-radius:4px;margin-bottom:5px;'>"
+                        f"<div style='display:flex;justify-content:space-between;'>"
+                        f"<span style='font-size:12px;font-weight:700;color:{b_color};'>{b_label}</span>"
+                        f"<span style='font-size:10px;color:#6b7a99;'>{b['tf']} | {b_time}</span>"
+                        f"</div>"
+                        f"<div style='font-size:10px;color:#94a3b8;margin-top:3px;'>{b_meaning}</div>"
+                        f"</div>", unsafe_allow_html=True)
+
+                for sw in sorted(all_sweeps, key=lambda x: str(x.get('time', '')), reverse=True)[:3]:
+                    sw_color = "#10b981" if sw['type'] == 'bullish' else "#ef4444"
+                    sw_time = sw['time'].strftime('%b %d %H:%M') if hasattr(sw['time'], 'strftime') else str(sw['time'])
+                    sweep_price = sw.get('sweep_low', sw.get('sweep_high', sw['level']))
+                    sw_label = f"Stop hunt at ${sw['level']:,.0f}" if True else ""
+                    sw_meaning = f"Price dipped to ${sweep_price:,.0f} to grab stops, then reversed UP" if sw['type'] == 'bullish' else f"Price spiked to ${sweep_price:,.0f} to grab stops, then reversed DOWN"
+                    st.markdown(
+                        f"<div style='padding:8px 12px;background:rgba(15,20,40,0.5);border-left:3px solid {sw_color};border-radius:4px;margin-bottom:5px;'>"
+                        f"<div style='display:flex;justify-content:space-between;'>"
+                        f"<span style='font-size:12px;font-weight:700;color:{sw_color};'>{sw_label}</span>"
+                        f"<span style='font-size:10px;color:#6b7a99;'>{sw['tf']} | {sw_time}</span>"
+                        f"</div>"
+                        f"<div style='font-size:10px;color:#94a3b8;margin-top:3px;'>{sw_meaning}</div>"
+                        f"</div>", unsafe_allow_html=True)
+
+            # ── Full Zone Details (collapsed) ──
+            with st.expander("View all zones by timeframe (advanced)", expanded=False):
+                for tf_label in ['Daily', '4H', '1H', '15min']:
+                    if tf_label not in smc_results:
+                        continue
+                    r = smc_results[tf_label]
+                    tf_display, tf_desc = tf_labels_map[tf_label]
                     untested_obs = [ob for ob in r['order_blocks'] if not ob['tested']]
-                    tested_obs = [ob for ob in r['order_blocks'] if ob['tested']]
-                    if untested_obs or tested_obs:
-                        st.markdown(f"<div style='font-size:12px;font-weight:700;color:#a855f7;margin-bottom:8px;border-bottom:1px solid #1e2745;padding-bottom:4px;'>Institutional Buy/Sell Zones</div>", unsafe_allow_html=True)
-                        st.markdown("<div style='font-size:10px;color:#6b7a99;margin-bottom:6px;'>Price zones where big players placed large orders. Price often bounces here.</div>", unsafe_allow_html=True)
-
-                        for ob in (untested_obs + tested_obs)[-8:]:
-                            ob_color = "#10b981" if ob['type'] == 'bullish' else "#ef4444"
-                            ob_label = "BUY ZONE" if ob['type'] == 'bullish' else "SELL ZONE"
-
-                            # Status: Active / Nearby / Mitigated
-                            zone_mid = (ob['high'] + ob['low']) / 2
-                            dist_pct = abs(current_price - zone_mid) / current_price * 100
-                            if ob['tested']:
-                                status = "MITIGATED"
-                                status_color = "#6b7a99"
-                                status_bg = "rgba(107,122,153,0.1)"
-                            elif dist_pct <= 0.3:
-                                status = "NEARBY"
-                                status_color = "#f59e0b"
-                                status_bg = "rgba(245,158,11,0.1)"
-                            else:
-                                status = "ACTIVE"
-                                status_color = "#10b981"
-                                status_bg = "rgba(16,185,129,0.1)"
-
-                            direction_hint = "above" if zone_mid > current_price else "below"
-                            ob_time = ob['time'].strftime('%b %d %H:%M') if hasattr(ob['time'], 'strftime') else str(ob['time'])
-
-                            st.markdown(
-                                f"<div style='padding:8px 12px;background:rgba(15,20,40,0.5);border-left:3px solid {ob_color};border-radius:4px;margin-bottom:5px;'>"
-                                f"<div style='display:flex;justify-content:space-between;align-items:center;'>"
-                                f"<span style='font-size:12px;font-weight:700;color:{ob_color};'>{ob_label}: ${ob['low']:,.0f} — ${ob['high']:,.0f}</span>"
-                                f"<span style='font-size:9px;font-weight:700;color:{status_color};background:{status_bg};padding:2px 8px;border-radius:10px;'>{status}</span>"
-                                f"</div>"
-                                f"<div style='display:flex;justify-content:space-between;margin-top:4px;'>"
-                                f"<span style='font-size:10px;color:#94a3b8;'>{dist_pct:.1f}% {direction_hint} current price</span>"
-                                f"<span style='font-size:9px;color:#5a6a8a;'>Formed: {ob_time}</span>"
-                                f"</div>"
-                                f"</div>", unsafe_allow_html=True)
-
-                    # ── Fair Value Gaps (Price Gaps) ──
                     unfilled_fvgs = [f for f in r['fvgs'] if not f['filled']]
-                    filled_fvgs = [f for f in r['fvgs'] if f['filled']]
-                    if unfilled_fvgs or filled_fvgs:
-                        st.markdown(f"<div style='font-size:12px;font-weight:700;color:#3b82f6;margin:14px 0 8px;border-bottom:1px solid #1e2745;padding-bottom:4px;'>Price Gaps (Imbalances)</div>", unsafe_allow_html=True)
-                        st.markdown("<div style='font-size:10px;color:#6b7a99;margin-bottom:6px;'>Areas where price moved too fast, leaving a gap. Price usually comes back to fill it.</div>", unsafe_allow_html=True)
-
-                        for fvg in (unfilled_fvgs + filled_fvgs)[-8:]:
-                            fvg_color = "#10b981" if fvg['type'] == 'bullish' else "#ef4444"
-                            fvg_label = "GAP UP (bullish)" if fvg['type'] == 'bullish' else "GAP DOWN (bearish)"
-
-                            gap_mid = (fvg['upper'] + fvg['lower']) / 2
-                            dist_pct = abs(current_price - gap_mid) / current_price * 100
-                            if fvg['filled']:
-                                status = "FILLED"
-                                status_color = "#6b7a99"
-                                status_bg = "rgba(107,122,153,0.1)"
-                            elif dist_pct <= 0.3:
-                                status = "NEARBY"
-                                status_color = "#f59e0b"
-                                status_bg = "rgba(245,158,11,0.1)"
-                            else:
-                                status = "UNFILLED"
-                                status_color = "#3b82f6"
-                                status_bg = "rgba(59,130,246,0.1)"
-
-                            direction_hint = "above" if gap_mid > current_price else "below"
-                            fvg_time = fvg['time'].strftime('%b %d %H:%M') if hasattr(fvg['time'], 'strftime') else str(fvg['time'])
-
-                            st.markdown(
-                                f"<div style='padding:8px 12px;background:rgba(15,20,40,0.5);border-left:3px solid {fvg_color};border-radius:4px;margin-bottom:5px;'>"
-                                f"<div style='display:flex;justify-content:space-between;align-items:center;'>"
-                                f"<span style='font-size:12px;font-weight:700;color:{fvg_color};'>{fvg_label}: ${fvg['lower']:,.0f} — ${fvg['upper']:,.0f}</span>"
-                                f"<span style='font-size:9px;font-weight:700;color:{status_color};background:{status_bg};padding:2px 8px;border-radius:10px;'>{status}</span>"
-                                f"</div>"
-                                f"<div style='display:flex;justify-content:space-between;margin-top:4px;'>"
-                                f"<span style='font-size:10px;color:#94a3b8;'>Gap size: ${fvg['size']:,.0f} · {dist_pct:.1f}% {direction_hint}</span>"
-                                f"<span style='font-size:9px;color:#5a6a8a;'>{fvg_time}</span>"
-                                f"</div>"
-                                f"</div>", unsafe_allow_html=True)
-
-                    # ── Break of Structure (Trend Shifts) ──
-                    if r['bos']:
-                        st.markdown(f"<div style='font-size:12px;font-weight:700;color:#f59e0b;margin:14px 0 8px;border-bottom:1px solid #1e2745;padding-bottom:4px;'>Trend Breaks</div>", unsafe_allow_html=True)
-                        st.markdown("<div style='font-size:10px;color:#6b7a99;margin-bottom:6px;'>Price broke above a previous high (bullish shift) or below a previous low (bearish shift).</div>", unsafe_allow_html=True)
-
-                        for b in r['bos'][-5:]:
-                            b_color = "#10b981" if b['type'] == 'bullish' else "#ef4444"
-                            b_label = "BROKE ABOVE previous high" if b['type'] == 'bullish' else "BROKE BELOW previous low"
-                            b_meaning = "Buyers took control — trend shifting up" if b['type'] == 'bullish' else "Sellers took control — trend shifting down"
-                            b_time = b['break_time'].strftime('%b %d %H:%M') if hasattr(b['break_time'], 'strftime') else str(b['break_time'])
-
-                            st.markdown(
-                                f"<div style='padding:8px 12px;background:rgba(15,20,40,0.5);border-left:3px solid {b_color};border-radius:4px;margin-bottom:5px;'>"
-                                f"<div style='display:flex;justify-content:space-between;align-items:center;'>"
-                                f"<span style='font-size:12px;font-weight:700;color:{b_color};'>{b_label} at ${b['level']:,.0f}</span>"
-                                f"<span style='font-size:9px;color:#5a6a8a;'>{b_time}</span>"
-                                f"</div>"
-                                f"<div style='font-size:10px;color:#94a3b8;margin-top:4px;'>{b_meaning}</div>"
-                                f"</div>", unsafe_allow_html=True)
-
-                    # ── Liquidity Sweeps (Stop Hunts) ──
-                    if r['sweeps']:
-                        st.markdown(f"<div style='font-size:12px;font-weight:700;color:#ec4899;margin:14px 0 8px;border-bottom:1px solid #1e2745;padding-bottom:4px;'>Stop Hunts (Liquidity Sweeps)</div>", unsafe_allow_html=True)
-                        st.markdown("<div style='font-size:10px;color:#6b7a99;margin-bottom:6px;'>Price briefly spiked past a key level to trigger stop losses, then reversed. Institutions do this to fill orders at better prices.</div>", unsafe_allow_html=True)
-
-                        for sw in r['sweeps'][-5:]:
-                            sw_color = "#10b981" if sw['type'] == 'bullish' else "#ef4444"
-                            sweep_price = sw.get('sweep_low', sw.get('sweep_high', sw['level']))
-                            sw_label = f"Dipped to ${sweep_price:,.0f} then reversed UP" if sw['type'] == 'bullish' else f"Spiked to ${sweep_price:,.0f} then reversed DOWN"
-                            sw_meaning = "Likely grabbed buy-side stops below support, then rallied" if sw['type'] == 'bullish' else "Likely grabbed sell-side stops above resistance, then dropped"
-                            sw_time = sw['time'].strftime('%b %d %H:%M') if hasattr(sw['time'], 'strftime') else str(sw['time'])
-
-                            st.markdown(
-                                f"<div style='padding:8px 12px;background:rgba(15,20,40,0.5);border-left:3px solid {sw_color};border-radius:4px;margin-bottom:5px;'>"
-                                f"<div style='display:flex;justify-content:space-between;align-items:center;'>"
-                                f"<span style='font-size:12px;font-weight:700;color:{sw_color};'>{sw_label}</span>"
-                                f"<span style='font-size:9px;color:#5a6a8a;'>{sw_time}</span>"
-                                f"</div>"
-                                f"<div style='font-size:10px;color:#94a3b8;margin-top:4px;'>{sw_meaning}</div>"
-                                f"</div>", unsafe_allow_html=True)
-
-                    if not untested_obs and not tested_obs and not unfilled_fvgs and not filled_fvgs and not r['bos'] and not r['sweeps']:
-                        st.markdown("<div style='color:#5a6a8a;font-size:11px;padding:8px;'>No institutional footprints detected on this timeframe.</div>", unsafe_allow_html=True)
+                    count = len(untested_obs) + len(unfilled_fvgs)
+                    if count == 0:
+                        continue
+                    st.markdown(f"<div style='font-size:12px;font-weight:700;color:#f0b90b;margin:10px 0 6px;border-bottom:1px solid #1e2745;padding-bottom:4px;'>{tf_display} ({count} active zones)</div>", unsafe_allow_html=True)
+                    for ob in untested_obs[-5:]:
+                        ob_color = "#10b981" if ob['type'] == 'bullish' else "#ef4444"
+                        ob_time = ob['time'].strftime('%b %d %H:%M') if hasattr(ob['time'], 'strftime') else str(ob['time'])
+                        st.markdown(f"<div style='font-size:11px;color:#e2e8f0;padding:4px 10px;border-left:2px solid {ob_color};margin-bottom:3px;'>{'BUY' if ob['type'] == 'bullish' else 'SELL'} ZONE: ${ob['low']:,.0f} - ${ob['high']:,.0f} <span style='color:#5a6a8a;font-size:9px;margin-left:8px;'>{ob_time}</span></div>", unsafe_allow_html=True)
+                    for fvg in unfilled_fvgs[-5:]:
+                        fvg_color = "#10b981" if fvg['type'] == 'bullish' else "#ef4444"
+                        fvg_time = fvg['time'].strftime('%b %d %H:%M') if hasattr(fvg['time'], 'strftime') else str(fvg['time'])
+                        st.markdown(f"<div style='font-size:11px;color:#e2e8f0;padding:4px 10px;border-left:2px solid {fvg_color};margin-bottom:3px;'>GAP: ${fvg['lower']:,.0f} - ${fvg['upper']:,.0f} (${fvg['size']:,.0f}) <span style='color:#5a6a8a;font-size:9px;margin-left:8px;'>{fvg_time}</span></div>", unsafe_allow_html=True)
 
             # ── Confluence Zones ──
             st.markdown("""<div class="section-header" style="--section-accent: #f0b90b; margin-top: 16px;">
@@ -5570,8 +5614,13 @@ def main():
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     with tab_backtest:
         st.markdown("""<div class="section-header" style="--section-accent: #3b82f6;">
-            <span class="section-title">Signal Backtest</span>
-            <span class="pill pill-model">HISTORICAL</span>
+            <span class="section-title">How Good Are Our Signals?</span>
+            <span class="pill pill-model">HISTORICAL TEST</span>
+        </div>""", unsafe_allow_html=True)
+        st.markdown("""<div style="font-size:11px;color:#94a3b8;margin-bottom:12px;line-height:1.6;">
+            We tested our signal engine on recent historical data to see how it would have performed.
+            Each "trade" below is one where our engine detected a pattern near a support/resistance level and
+            we tracked what happened next: did price hit our target (Win) or stop-loss (Loss)?
         </div>""", unsafe_allow_html=True)
 
         # Run backtest
@@ -5593,28 +5642,52 @@ def main():
             pf_label = "Profitable" if pf_val > 1 and pf_val < 999 else "No losses yet" if pf_val >= 999 else "Unprofitable"
             pnl_color = "#10b981" if bt_stats['total_pnl_r'] > 0 else "#ef4444"
 
+            # Plain-English verdict
+            if bt_stats['total'] < 5:
+                verdict = "Not enough trades to draw conclusions. Need more data for a reliable test."
+                verdict_color = "#f59e0b"
+            elif bt_stats['win_rate'] >= 55 and pf_val > 1.2:
+                verdict = f"Solid edge detected. {bt_stats['wins']} out of {bt_stats['total']} trades were winners, and wins were bigger than losses on average."
+                verdict_color = "#10b981"
+            elif bt_stats['win_rate'] >= 45 and pf_val > 1.0:
+                verdict = f"Marginal edge. Slightly profitable but not strong enough to trade blindly. Use signals as confirmation, not standalone entries."
+                verdict_color = "#f59e0b"
+            else:
+                verdict = f"No edge detected in this test period. {bt_stats['losses']} losses vs {bt_stats['wins']} wins. Signals should be filtered more carefully."
+                verdict_color = "#ef4444"
+
+            st.markdown(
+                f"<div style='background:rgba(15,20,40,0.6);border:1px solid {verdict_color}33;border-radius:8px;padding:12px 16px;margin-bottom:14px;'>"
+                f"<div style='font-size:12px;font-weight:700;color:{verdict_color};margin-bottom:4px;'>VERDICT</div>"
+                f"<div style='font-size:12px;color:#cbd5e1;line-height:1.5;'>{verdict}</div>"
+                f"</div>", unsafe_allow_html=True)
+
             st.markdown(f"""<div class="intel-card">
-                <h3 style="margin-bottom:14px;">Performance Summary <span class="pill pill-data">{bt_stats['total']} TRADES</span></h3>
+                <h3 style="margin-bottom:14px;">Results from {bt_stats['total']} Simulated Trades</h3>
                 <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;text-align:center;">
                     <div style="background:rgba(16,185,129,0.06);border-radius:8px;padding:12px;">
                         <div style="font-size:9px;color:#6b7a99;letter-spacing:0.5px;">WIN RATE</div>
                         <div style="font-size:22px;font-weight:800;color:{wr_color};">{bt_stats['win_rate']:.1f}%</div>
-                        <div style="font-size:10px;color:#5a6a8a;">{bt_stats['wins']}W / {bt_stats['losses']}L / {bt_stats['expired']}E</div>
+                        <div style="font-size:10px;color:#5a6a8a;">{bt_stats['wins']} wins / {bt_stats['losses']} losses</div>
+                        <div style="font-size:9px;color:#4a5a7a;margin-top:2px;">{'Above 50% = edge' if bt_stats['win_rate'] >= 50 else 'Below 50% = losing'}</div>
                     </div>
                     <div style="background:rgba(59,130,246,0.06);border-radius:8px;padding:12px;">
-                        <div style="font-size:9px;color:#6b7a99;letter-spacing:0.5px;">PROFIT FACTOR</div>
+                        <div style="font-size:9px;color:#6b7a99;letter-spacing:0.5px;">PROFIT RATIO</div>
                         <div style="font-size:22px;font-weight:800;color:{pf_color};">{pf_display}</div>
                         <div style="font-size:10px;color:#5a6a8a;">{pf_label}</div>
+                        <div style="font-size:9px;color:#4a5a7a;margin-top:2px;">Above 1.5 = strong</div>
                     </div>
                     <div style="background:rgba(240,185,11,0.06);border-radius:8px;padding:12px;">
-                        <div style="font-size:9px;color:#6b7a99;letter-spacing:0.5px;">TOTAL P&L</div>
+                        <div style="font-size:9px;color:#6b7a99;letter-spacing:0.5px;">NET RESULT</div>
                         <div style="font-size:22px;font-weight:800;color:{pnl_color};">{bt_stats['total_pnl_r']:+.1f}R</div>
-                        <div style="font-size:10px;color:#5a6a8a;">Avg win {bt_stats['avg_win_r']:.1f}R · loss {bt_stats['avg_loss_r']:.1f}R</div>
+                        <div style="font-size:10px;color:#5a6a8a;">{'Net profit' if bt_stats['total_pnl_r'] > 0 else 'Net loss'}</div>
+                        <div style="font-size:9px;color:#4a5a7a;margin-top:2px;">R = risk units</div>
                     </div>
                     <div style="background:rgba(239,68,68,0.06);border-radius:8px;padding:12px;">
-                        <div style="font-size:9px;color:#6b7a99;letter-spacing:0.5px;">MAX DRAWDOWN</div>
+                        <div style="font-size:9px;color:#6b7a99;letter-spacing:0.5px;">WORST STREAK</div>
                         <div style="font-size:22px;font-weight:800;color:#ef4444;">{bt_stats['max_drawdown_r']:.1f}R</div>
-                        <div style="font-size:10px;color:#5a6a8a;">Avg hold: {bt_stats['avg_bars_held']:.0f} bars</div>
+                        <div style="font-size:10px;color:#5a6a8a;">max drawdown</div>
+                        <div style="font-size:9px;color:#4a5a7a;margin-top:2px;">Biggest losing run</div>
                     </div>
                 </div>
             </div>""", unsafe_allow_html=True)
@@ -5622,9 +5695,9 @@ def main():
             # ── Equity Curve ──
             if bt_stats['equity_curve']:
                 st.markdown("""<div class="section-header" style="--section-accent: #10b981; margin-top: 16px;">
-                    <span class="section-title">Equity Curve</span>
-                    <span class="pill pill-data">CUMULATIVE R</span>
+                    <span class="section-title">Running Profit/Loss</span>
                 </div>""", unsafe_allow_html=True)
+                st.markdown("<div style='font-size:10px;color:#6b7a99;margin-bottom:6px;'>Each bar = one trade. Green = running profit growing, Red = drawdown. A good system trends up-right.</div>", unsafe_allow_html=True)
 
                 eq = bt_stats['equity_curve']
                 max_eq = max(abs(v) for v in eq) if eq else 1
@@ -5643,17 +5716,28 @@ def main():
                 </div>""", unsafe_allow_html=True)
 
             # ── Trend Alignment ──
+            ta_wr = bt_stats['trend_aligned_wr']
+            ct_wr = bt_stats['counter_trend_wr']
+            ta_diff = ta_wr - ct_wr
+            if ta_diff > 10:
+                ta_insight = f"Trading WITH the daily trend wins {ta_diff:.0f}% more often. Stick to trend-aligned signals for best results."
+            elif ta_diff < -10:
+                ta_insight = f"Counter-trend signals actually performed better here. The market may be in a reversal phase."
+            else:
+                ta_insight = "Trend alignment made little difference in this test. Both directions performed similarly."
+
             st.markdown(f"""<div class="intel-card" style="margin-top:16px;">
-                <h3>Trend Alignment Impact</h3>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px;">
+                <h3>Does Following the Trend Help?</h3>
+                <div style="font-size:11px;color:#94a3b8;margin:6px 0 12px;">{ta_insight}</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                     <div style="background:rgba(16,185,129,0.06);border-radius:8px;padding:12px;text-align:center;">
-                        <div style="font-size:10px;color:#6b7a99;">WITH Trend</div>
-                        <div style="font-size:20px;font-weight:700;color:#10b981;">{bt_stats['trend_aligned_wr']:.1f}%</div>
+                        <div style="font-size:10px;color:#6b7a99;">Trading WITH trend</div>
+                        <div style="font-size:20px;font-weight:700;color:#10b981;">{ta_wr:.1f}%</div>
                         <div style="font-size:9px;color:#5a6a8a;">win rate</div>
                     </div>
                     <div style="background:rgba(239,68,68,0.06);border-radius:8px;padding:12px;text-align:center;">
-                        <div style="font-size:10px;color:#6b7a99;">COUNTER Trend</div>
-                        <div style="font-size:20px;font-weight:700;color:#ef4444;">{bt_stats['counter_trend_wr']:.1f}%</div>
+                        <div style="font-size:10px;color:#6b7a99;">Trading AGAINST trend</div>
+                        <div style="font-size:20px;font-weight:700;color:#ef4444;">{ct_wr:.1f}%</div>
                         <div style="font-size:9px;color:#5a6a8a;">win rate</div>
                     </div>
                 </div>
@@ -5662,8 +5746,9 @@ def main():
             # ── Pattern Breakdown ──
             if bt_stats['pattern_stats']:
                 st.markdown("""<div class="section-header" style="--section-accent: #a855f7; margin-top: 16px;">
-                    <span class="section-title">Pattern Performance</span>
+                    <span class="section-title">Which Patterns Work Best?</span>
                 </div>""", unsafe_allow_html=True)
+                st.markdown("<div style='font-size:10px;color:#6b7a99;margin-bottom:6px;'>How each candle pattern performed historically. Green = profitable, Red = losing.</div>", unsafe_allow_html=True)
 
                 for pname, pdata in sorted(bt_stats['pattern_stats'].items(), key=lambda x: x[1]['pnl_r'], reverse=True):
                     p_wr = (pdata['wins'] / pdata['total']) * 100 if pdata['total'] > 0 else 0
@@ -5683,8 +5768,9 @@ def main():
             # ── Session Performance ──
             if bt_stats['session_stats']:
                 st.markdown("""<div class="section-header" style="--section-accent: #f59e0b; margin-top: 16px;">
-                    <span class="section-title">Session Performance</span>
+                    <span class="section-title">Best Time to Trade?</span>
                 </div>""", unsafe_allow_html=True)
+                st.markdown("<div style='font-size:10px;color:#6b7a99;margin-bottom:6px;'>Performance broken down by trading session (London, New York, etc.). Find your best window.</div>", unsafe_allow_html=True)
 
                 for sname, sdata in sorted(bt_stats['session_stats'].items(), key=lambda x: x[1]['pnl_r'], reverse=True):
                     s_wr = (sdata['wins'] / sdata['total']) * 100 if sdata['total'] > 0 else 0
@@ -5702,8 +5788,9 @@ def main():
             # ── Confidence Level Performance ──
             if bt_stats['conf_stats']:
                 st.markdown("""<div class="section-header" style="--section-accent: #3b82f6; margin-top: 16px;">
-                    <span class="section-title">Confidence Level Performance</span>
+                    <span class="section-title">Do High-Confidence Signals Win More?</span>
                 </div>""", unsafe_allow_html=True)
+                st.markdown("<div style='font-size:10px;color:#6b7a99;margin-bottom:6px;'>Our signals are scored HIGH/MEDIUM/LOW confidence. Here's whether higher scores actually mean better trades.</div>", unsafe_allow_html=True)
 
                 for cname in ['HIGH', 'MEDIUM', 'LOW']:
                     if cname not in bt_stats['conf_stats']:
@@ -5724,7 +5811,7 @@ def main():
 
             # ── Best & Worst Trades ──
             st.markdown("""<div class="section-header" style="--section-accent: #f0b90b; margin-top: 16px;">
-                <span class="section-title">Notable Trades</span>
+                <span class="section-title">Best and Worst Trades</span>
             </div>""", unsafe_allow_html=True)
 
             best = bt_stats['best_trade']
