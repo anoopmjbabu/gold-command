@@ -1708,93 +1708,130 @@ def get_instrument_icon(name):
 
 
 def get_session_clock_html():
-    """Generate a session clock bar with 12hr format, session status, overlap, and countdown."""
+    """Generate a session clock bar with 12hr format, per-market open/close status, overlaps, and countdowns."""
     from datetime import timezone, timedelta
     now_utc = datetime.now(timezone.utc)
     h = now_utc.hour
     m = now_utc.minute
+    total_mins = h * 60 + m
 
-    # 12-hour timezone clocks
+    # 12-hour format helper
     def fmt12(dt):
         return dt.strftime('%I:%M %p').lstrip('0')
 
-    est = now_utc + timedelta(hours=-5)   # US Eastern
-    gst = now_utc + timedelta(hours=4)    # Gulf Standard Time (Dubai)
-    ist = now_utc + timedelta(hours=5, minutes=30)  # India Standard Time
+    # Timezone clocks
+    est = now_utc + timedelta(hours=-5)      # US Eastern
+    gmt = now_utc                             # London/GMT
+    ist = now_utc + timedelta(hours=5, minutes=30)  # India
+    jst = now_utc + timedelta(hours=9)        # Tokyo
+    aest = now_utc + timedelta(hours=11)      # Sydney (AEDT)
 
-    # Session windows (UTC hours) and close times
-    # Asia/Tokyo: 00:00–09:00 UTC
-    # London:     07:00–16:00 UTC
-    # New York:   12:00–21:00 UTC
-    sessions = {
-        'Asia': {'start': 0, 'end': 9, 'local_tz': 'JST', 'local_offset': 9},
-        'London': {'start': 7, 'end': 16, 'local_tz': 'GMT', 'local_offset': 0},
-        'New York': {'start': 12, 'end': 21, 'local_tz': 'ET', 'local_offset': -5},
-    }
-
-    asia_active = sessions['Asia']['start'] <= h < sessions['Asia']['end']
-    london_active = sessions['London']['start'] <= h < sessions['London']['end']
-    ny_active = sessions['New York']['start'] <= h < sessions['New York']['end']
-
-    # Overlaps
-    asia_london_overlap = asia_active and london_active
-    london_ny_overlap = london_active and ny_active
-
-    # Countdown helper: minutes until a UTC hour
-    def countdown_to(target_hour):
-        mins_left = (target_hour - h - 1) * 60 + (60 - m)
-        if mins_left < 0:
-            mins_left += 24 * 60
-        hrs = mins_left // 60
-        mins = mins_left % 60
-        if hrs > 0:
-            return f"{hrs}h {mins}m"
-        return f"{mins}m"
+    # ── Market Sessions (all times in UTC minutes from midnight) ──
+    # Gold/Forex markets: Sunday 22:00 UTC → Friday 21:00 UTC
+    # Individual session windows:
+    sessions = [
+        {'name': 'Sydney',   'icon': '🇦🇺', 'start': 21*60, 'end': 6*60,   'wraps': True,  'tz': 'AEDT', 'offset': 11},
+        {'name': 'Tokyo',    'icon': '🇯🇵', 'start': 0*60,  'end': 9*60,   'wraps': False, 'tz': 'JST',  'offset': 9},
+        {'name': 'India',    'icon': '🇮🇳', 'start': 3*60+30, 'end': 11*60+30, 'wraps': False, 'tz': 'IST', 'offset': 5.5},
+        {'name': 'London',   'icon': '🇬🇧', 'start': 7*60,  'end': 16*60,  'wraps': False, 'tz': 'GMT',  'offset': 0},
+        {'name': 'New York', 'icon': '🇺🇸', 'start': 12*60, 'end': 21*60,  'wraps': False, 'tz': 'ET',   'offset': -5},
+    ]
 
     weekday = now_utc.weekday()
     is_weekend = weekday >= 5
 
+    # Check if a session is active (handles sessions that wrap past midnight)
+    def is_active(s):
+        if is_weekend:
+            return False
+        if s['wraps']:
+            return total_mins >= s['start'] or total_mins < s['end']
+        return s['start'] <= total_mins < s['end']
+
+    # Countdown in minutes to a target time (in UTC minutes)
+    def countdown_mins(target_mins):
+        diff = target_mins - total_mins
+        if diff <= 0:
+            diff += 24 * 60
+        return diff
+
+    def fmt_countdown(mins):
+        hrs = mins // 60
+        rem = mins % 60
+        if hrs > 0:
+            return f"{hrs}h {rem}m"
+        return f"{rem}m"
+
     # Build session status rows
     session_rows = ""
     if is_weekend:
-        session_rows = ('<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">'
-                        '<span class="session-badge inactive">Market Closed — Weekend</span>'
-                        '</div>')
+        # Show when market reopens (Sunday 22:00 UTC)
+        if weekday == 5:  # Saturday
+            reopen_hrs = (24 - h - 1) + 22 + (60 - m) / 60
+        else:  # Sunday
+            reopen_mins = countdown_mins(22 * 60)
+            reopen_hrs = reopen_mins / 60
+        session_rows = (
+            f'<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">'
+            f'<span class="session-badge inactive">Market Closed — Weekend</span>'
+            f'<span style="font-size:9px;color:#5a6a8a;">Reopens Sunday 10:00 PM UTC ({int(reopen_hrs)}h)</span>'
+            f'</div>'
+        )
     else:
-        for s_name, s_info in sessions.items():
-            active = s_info['start'] <= h < s_info['end']
+        active_sessions = []
+        for s in sessions:
+            active = is_active(s)
             if active:
-                closes_in = countdown_to(s_info['end'])
-                local_time = now_utc + timedelta(hours=s_info['local_offset'])
-                session_rows += (f'<div style="display:flex;align-items:center;gap:8px;padding:4px 0;">'
-                                 f'<span class="session-badge active">● {s_name}</span>'
-                                 f'<span style="font-size:9px;color:#a8b2c8;">Closes in <b style="color:#f0b90b;">{closes_in}</b></span>'
-                                 f'<span style="font-size:9px;color:#5a6a8a;">({fmt12(local_time)} {s_info["local_tz"]})</span>'
-                                 f'</div>')
+                active_sessions.append(s['name'])
+                # Countdown to close
+                close_mins = countdown_mins(s['end'])
+                local_time = now_utc + timedelta(hours=s['offset'])
+                session_rows += (
+                    f'<div style="display:flex;align-items:center;gap:8px;padding:3px 0;">'
+                    f'<span class="session-badge active">{s["icon"]} {s["name"]}</span>'
+                    f'<span style="font-size:9px;color:#10b981;font-weight:700;">OPEN</span>'
+                    f'<span style="font-size:9px;color:#a8b2c8;">Closes in <b style="color:#f0b90b;">{fmt_countdown(close_mins)}</b></span>'
+                    f'<span style="font-size:9px;color:#5a6a8a;">({fmt12(local_time)} {s["tz"]})</span>'
+                    f'</div>'
+                )
             else:
-                opens_in = countdown_to(s_info['start'])
-                session_rows += (f'<div style="display:flex;align-items:center;gap:8px;padding:4px 0;">'
-                                 f'<span class="session-badge inactive">○ {s_name}</span>'
-                                 f'<span style="font-size:9px;color:#5a6a8a;">Opens in {opens_in}</span>'
-                                 f'</div>')
+                # Countdown to open
+                open_mins = countdown_mins(s['start'])
+                session_rows += (
+                    f'<div style="display:flex;align-items:center;gap:8px;padding:3px 0;">'
+                    f'<span class="session-badge inactive">{s["icon"]} {s["name"]}</span>'
+                    f'<span style="font-size:9px;color:#ef4444;font-weight:700;">CLOSED</span>'
+                    f'<span style="font-size:9px;color:#5a6a8a;">Opens in {fmt_countdown(open_mins)}</span>'
+                    f'</div>'
+                )
 
-        # Overlap badge
-        if asia_london_overlap:
-            session_rows += ('<div style="padding:4px 0;">'
-                             '<span class="session-badge overlap">Asia–London Overlap Active</span>'
-                             '</div>')
-        elif london_ny_overlap:
-            session_rows += ('<div style="padding:4px 0;">'
-                             '<span class="session-badge overlap">London–NY Overlap Active (Peak Volatility)</span>'
-                             '</div>')
+        # Overlap detection
+        overlaps = []
+        if 'Sydney' in active_sessions and 'Tokyo' in active_sessions:
+            overlaps.append('Sydney–Tokyo')
+        if 'Tokyo' in active_sessions and 'India' in active_sessions:
+            overlaps.append('Tokyo–India')
+        if 'India' in active_sessions and 'London' in active_sessions:
+            overlaps.append('India–London')
+        if 'Tokyo' in active_sessions and 'London' in active_sessions:
+            overlaps.append('Asia–London')
+        if 'London' in active_sessions and 'New York' in active_sessions:
+            overlaps.append('London–NY (Peak Liquidity)')
+        for ov in overlaps:
+            session_rows += (
+                f'<div style="padding:3px 0;">'
+                f'<span class="session-badge overlap">⚡ {ov} Overlap Active</span>'
+                f'</div>'
+            )
 
     return (
         f'<div class="session-clock">'
         f'<div class="session-clock-times">'
         f'<div class="session-clock-zone"><div class="tz-label">New York</div><div class="tz-time">{fmt12(est)}</div></div>'
-        f'<div class="session-clock-zone"><div class="tz-label">London</div><div class="tz-time">{fmt12(now_utc)}</div></div>'
-        f'<div class="session-clock-zone"><div class="tz-label">Dubai</div><div class="tz-time">{fmt12(gst)}</div></div>'
+        f'<div class="session-clock-zone"><div class="tz-label">London</div><div class="tz-time">{fmt12(gmt)}</div></div>'
         f'<div class="session-clock-zone"><div class="tz-label">India</div><div class="tz-time">{fmt12(ist)}</div></div>'
+        f'<div class="session-clock-zone"><div class="tz-label">Tokyo</div><div class="tz-time">{fmt12(jst)}</div></div>'
+        f'<div class="session-clock-zone"><div class="tz-label">Sydney</div><div class="tz-time">{fmt12(aest)}</div></div>'
         f'</div>'
         f'<div style="display:flex;flex-direction:column;gap:2px;">{session_rows}</div>'
         f'</div>'
