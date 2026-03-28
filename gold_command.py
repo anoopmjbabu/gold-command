@@ -1141,9 +1141,10 @@ def compute_indicators(df):
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     df['ATR_14'] = tr.rolling(14).mean()
 
-    # Volume analysis
-    df['Vol_SMA_20'] = df['Volume'].rolling(20).mean()
-    df['Vol_ratio'] = df['Volume'] / df['Vol_SMA_20']
+    # Volume analysis — handle NaN/zero volume (common with futures data)
+    df['Volume'] = pd.to_numeric(df['Volume'], errors='coerce').fillna(0)
+    df['Vol_SMA_20'] = df['Volume'].rolling(20).mean().replace(0, np.nan)
+    df['Vol_ratio'] = (df['Volume'] / df['Vol_SMA_20']).fillna(0)
 
     return df
 
