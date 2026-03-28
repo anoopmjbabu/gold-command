@@ -1943,16 +1943,16 @@ def detect_volume_spikes(df, threshold=1.5):
     # Trigger 1: Volume spike (original — volume > threshold x 20-day avg)
     vol_mask = df['Vol_ratio'] >= threshold
 
-    # Trigger 2: Price-change spike (close-to-close move > 1.5x ATR)
+    # Trigger 2: Price-change spike (close-to-close move > 1.0x ATR — any move bigger than avg range is notable)
     if 'ATR_14' in df.columns:
         price_chg_abs = (df['Close'] - df['Close'].shift(1)).abs()
-        price_mask = price_chg_abs > (df['ATR_14'] * 1.3)
+        price_mask = price_chg_abs > (df['ATR_14'] * 1.0)
     else:
-        price_mask = df['change_pct'] > 1.5  # Fallback: >1.5% move
+        price_mask = df['change_pct'] > 1.0  # Fallback: >1.0% move
 
-    # Trigger 3: Intraday range spike (daily high-low range > 1.5x ATR)
+    # Trigger 3: Intraday range spike (daily high-low range > 1.2x ATR — wider than normal day)
     if 'ATR_14' in df.columns:
-        range_mask = df['daily_range'] > (df['ATR_14'] * 1.5)
+        range_mask = df['daily_range'] > (df['ATR_14'] * 1.2)
     else:
         range_mask = pd.Series(False, index=df.index)
 
