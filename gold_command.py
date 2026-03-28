@@ -1826,7 +1826,7 @@ def backtest_signals(mtf_data, lookback_bars=100, max_hold_bars=20):
         # Determine direction based on pattern and trend alignment
         for level in nearby[:2]:
             ltype = level['type']
-            lprice = level['level']
+            lprice = level.get('price', level.get('level', 0))
             distance_pct = abs(bar_price - lprice) / bar_price * 100
 
             if distance_pct > 0.8:
@@ -1866,8 +1866,8 @@ def backtest_signals(mtf_data, lookback_bars=100, max_hold_bars=20):
             rr1 = abs(tp1 - entry) / risk
 
             # Trend alignment bonus
-            trend_aligned = (direction == 'LONG' and daily_trend in ['BULLISH', 'STRONG_BULLISH']) or \
-                           (direction == 'SHORT' and daily_trend in ['BEARISH', 'STRONG_BEARISH'])
+            trend_aligned = (direction == 'LONG' and daily_trend in ['BULLISH', 'WEAK_BULLISH']) or \
+                           (direction == 'SHORT' and daily_trend in ['BEARISH', 'WEAK_BEARISH'])
 
             # Score
             score = 40  # base
