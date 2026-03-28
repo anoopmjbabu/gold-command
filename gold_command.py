@@ -2651,28 +2651,76 @@ def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, 
         bias_word = "mixed"
 
     # Build macro driver cards HTML
+    # Check beginner mode from session state
+    is_beginner = st.session_state.get('beginner_mode', True)
+
+    # Beginner-friendly explanations for each driver
+    _beginner_explain = {
+        'USD (DXY)': {
+            'BULLISH': ('The US Dollar is weakening', 'When the dollar drops, gold usually rises because gold becomes cheaper for foreign buyers.', '👍 Good for gold'),
+            'BEARISH': ('The US Dollar is getting stronger', 'When the dollar rises, gold usually falls because gold becomes more expensive for foreign buyers.', '👎 Bad for gold'),
+            'NEUTRAL': ('The US Dollar is steady', 'No major dollar move right now — not pushing gold either way.', '➡️ No effect'),
+        },
+        'US 10Y': {
+            'BULLISH': ('Bond yields are falling', 'When interest rates drop, gold becomes more attractive because bonds pay less — money flows into gold instead.', '👍 Good for gold'),
+            'BEARISH': ('Bond yields are rising', 'When interest rates rise, investors prefer bonds over gold because bonds now pay more. Gold loses appeal.', '👎 Bad for gold'),
+            'NEUTRAL': ('Bond yields are stable', 'Yields aren\'t moving much — no major pressure on gold from the bond market.', '➡️ No effect'),
+        },
+        'VIX': {
+            'BULLISH': ('Market fear is high', 'The "Fear Index" is elevated — investors are nervous and buying gold as a safe place to park money.', '👍 Good for gold'),
+            'BEARISH': ('Markets are calm', 'Fear is low — investors feel confident and prefer stocks over safe-haven assets like gold.', '👎 Bad for gold'),
+            'NEUTRAL': ('Market anxiety is normal', 'Fear levels are average — no panic buying or confident selling.', '➡️ No effect'),
+        },
+        'Gold Trend (SMA 20/50)': {
+            'BULLISH': ('Gold\'s trend is pointing up', 'The price is above its key moving averages — the trend is your friend, and right now it favours buyers.', '👍 Trend supports gold'),
+            'BEARISH': ('Gold\'s trend is pointing down', 'The price is below its key moving averages — the trend is working against gold right now.', '👎 Trend is against gold'),
+            'NEUTRAL': ('Gold\'s trend is unclear', 'Mixed signals from the moving averages — no clear direction yet.', '➡️ No clear trend'),
+        },
+        'S&P 500': {
+            'BULLISH': ('The stock market is falling', 'When stocks drop, investors get nervous and move money into gold for safety — this is called a "risk-off" move.', '👍 Good for gold'),
+            'BEARISH': ('The stock market is rising', 'When stocks are rallying, investors prefer equities over gold — less demand for safe-haven assets.', '👎 Bad for gold'),
+            'NEUTRAL': ('Stocks are flat', 'No big move in equities — not driving gold either way.', '➡️ No effect'),
+        },
+        'Crude Oil': {
+            'BULLISH': ('Oil prices are rising', 'Rising oil signals inflation fears — and gold is the classic inflation hedge. Money flows into gold.', '👍 Good for gold'),
+            'BEARISH': ('Oil prices are falling', 'Falling oil eases inflation worries — less reason to hold gold as a hedge.', '👎 Bad for gold'),
+            'NEUTRAL': ('Oil is stable', 'No major oil move — not pushing gold in either direction.', '➡️ No effect'),
+        },
+    }
+
     driver_cards_html = '<div class="driver-grid">'
     for d in drivers:
         name, detail, impact = d[0], d[1], d[2]
         why = d[3] if len(d) > 3 else ""
         card_class = "bullish" if impact == "BULLISH" else "bearish" if impact == "BEARISH" else "neutral"
         chg_color = "#10b981" if impact == "BULLISH" else "#ef4444" if impact == "BEARISH" else "#5a6a8a"
-        # Show impact label: use the why-text as the label if available, else show directional arrow
-        if why:
-            gold_label = why[:45]
-            why_text = ""
+
+        if is_beginner and name in _beginner_explain:
+            # ── BEGINNER MODE: plain English cards ──
+            explain = _beginner_explain[name].get(impact, _beginner_explain[name].get('NEUTRAL'))
+            headline, explanation, verdict = explain
+            driver_cards_html += (
+                f'<div class="driver-card {card_class}" style="padding:10px 12px;">'
+                f'<div class="dc-name" style="font-size:10px;margin-bottom:2px;">{name}</div>'
+                f'<div style="font-size:12px;font-weight:700;color:#e2e8f0;margin-bottom:4px;">{headline}</div>'
+                f'<div style="font-size:10px;color:#94a3b8;line-height:1.4;margin-bottom:6px;">{explanation}</div>'
+                f'<div style="font-size:11px;font-weight:700;color:{chg_color};border-top:1px solid rgba(255,255,255,0.05);padding-top:5px;">{verdict}</div>'
+                f'</div>'
+            )
         else:
-            gold_arrow = "↑" if impact == "BULLISH" else "↓" if impact == "BEARISH" else "→"
-            gold_label = f"Gold {gold_arrow}"
-            why_text = ""
-        driver_cards_html += (
-            f'<div class="driver-card {card_class}">'
-            f'<div class="dc-name">{name}</div>'
-            f'<div class="dc-value">{detail}</div>'
-            f'<div class="dc-change" style="color:{chg_color};">{gold_label}</div>'
-            f'{why_text}'
-            f'</div>'
-        )
+            # ── PRO MODE: compact data cards ──
+            if why:
+                gold_label = why[:45]
+            else:
+                gold_arrow = "↑" if impact == "BULLISH" else "↓" if impact == "BEARISH" else "→"
+                gold_label = f"Gold {gold_arrow}"
+            driver_cards_html += (
+                f'<div class="driver-card {card_class}">'
+                f'<div class="dc-name">{name}</div>'
+                f'<div class="dc-value">{detail}</div>'
+                f'<div class="dc-change" style="color:{chg_color};">{gold_label}</div>'
+                f'</div>'
+            )
     driver_cards_html += '</div>'
 
     # Inline driver summary for the text paragraph
@@ -2754,17 +2802,45 @@ def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, 
             skill_section = ''.join(parts)
             skill_section += '<div style="font-size:8px;color:#3d4b6b;margin-top:6px;text-align:right;">Analysis: Gold Intel Daily Brief</div>'
 
-    # Compose the brief
-    brief_html = (
-        f'<p>Gold is trading at <b>${current:,.2f}</b>, '
-        f'<span class="{dir_class}">{direction} ${abs(daily_chg):,.2f} ({daily_pct:+.2f}%)</span> on the session. '
-        f'The daily trend is <b>{signal_trend.replace("_", " ").lower()}</b> and macro conditions are <b>{bias_word}</b>.</p>'
-        f'{driver_cards_html}'
-        f'<p style="margin-top:12px;">{rsi_text}. {range_text}</p>'
-        f'<p>{sig_text}</p>'
-        f'<p>{levels_text}</p>'
-        f'{skill_section}'
-    )
+    # Compose the brief — adapt language for beginner mode
+    if is_beginner:
+        # Beginner: plain English, no jargon
+        if bias_word == "bullish":
+            bias_explain = "Most market forces are <b style='color:#10b981;'>pushing gold higher</b> right now."
+        elif bias_word == "bearish":
+            bias_explain = "Most market forces are <b style='color:#ef4444;'>pushing gold lower</b> right now."
+        else:
+            bias_explain = "Market forces are <b style='color:#f59e0b;'>pulling gold in both directions</b> — expect choppy price action."
+
+        # Beginner-friendly RSI
+        if rsi < 30:
+            rsi_beginner = f'Gold looks <span class="highlight-down">oversold</span> — it may be due for a bounce upward.'
+        elif rsi > 70:
+            rsi_beginner = f'Gold looks <span class="highlight-up">overbought</span> — it may pull back from here.'
+        else:
+            rsi_beginner = "Gold's momentum is in a normal range — no extreme readings."
+
+        brief_html = (
+            f'<p>Gold is trading at <b>${current:,.2f}</b>, '
+            f'<span class="{dir_class}">{direction} ${abs(daily_chg):,.2f} ({daily_pct:+.2f}%)</span> on the session.</p>'
+            f'<p>{bias_explain}</p>'
+            f'<p style="font-size:11px;color:#94a3b8;margin-bottom:6px;">Here\'s what\'s moving gold — each card explains how it affects the price:</p>'
+            f'{driver_cards_html}'
+            f'<p style="margin-top:12px;">{rsi_beginner} {range_text}</p>'
+            f'{skill_section}'
+        )
+    else:
+        # Pro: data-dense, technical
+        brief_html = (
+            f'<p>Gold is trading at <b>${current:,.2f}</b>, '
+            f'<span class="{dir_class}">{direction} ${abs(daily_chg):,.2f} ({daily_pct:+.2f}%)</span> on the session. '
+            f'The daily trend is <b>{signal_trend.replace("_", " ").lower()}</b> and macro conditions are <b>{bias_word}</b>.</p>'
+            f'{driver_cards_html}'
+            f'<p style="margin-top:12px;">{rsi_text}. {range_text}</p>'
+            f'<p>{sig_text}</p>'
+            f'<p>{levels_text}</p>'
+            f'{skill_section}'
+        )
 
     return brief_html, bias, bias_color, bias_bg
 
