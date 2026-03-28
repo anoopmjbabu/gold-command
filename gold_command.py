@@ -906,6 +906,7 @@ def fetch_economic_calendar():
         pass
     if not finnhub_key:
         finnhub_key = os.environ.get('FINNHUB_API_KEY', '')
+    logger.info(f"FinnHub key found: {'YES' if finnhub_key else 'NO'}")
     if finnhub_key:
         try:
             today = datetime.utcnow().date()
@@ -913,10 +914,17 @@ def fetch_economic_calendar():
             to_date = (today + timedelta(days=7)).strftime('%Y-%m-%d')
             url = f"https://finnhub.io/api/v1/calendar/economic?from={from_date}&to={to_date}&token={finnhub_key}"
             resp = requests.get(url, timeout=10)
+            logger.info(f"FinnHub response status: {resp.status_code}")
             if resp.status_code == 200:
                 data = resp.json()
+                # FinnHub wraps events in 'economicCalendar' key
+                raw_events = data.get('economicCalendar', data.get('result', []))
+                if isinstance(raw_events, dict):
+                    raw_events = raw_events.get('result', [])
+                logger.info(f"FinnHub raw events count: {len(raw_events) if isinstance(raw_events, list) else 'not a list'}")
+                logger.info(f"FinnHub response keys: {list(data.keys())}")
                 events = []
-                for item in data.get('economicCalendar', []):
+                for item in (raw_events if isinstance(raw_events, list) else []):
                     if item.get('country', '') != 'US':
                         continue  # Only US events matter for gold
                     event_name = item.get('event', '')
