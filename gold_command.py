@@ -1122,12 +1122,15 @@ def compute_indicators(df):
 
     # RSI (Wilder's smoothing — matches TradingView/MT4)
     delta = df['Close'].diff()
-    gain = delta.where(delta > 0, 0)
-    loss = (-delta.where(delta < 0, 0))
+    gain = delta.where(delta > 0, 0.0)
+    loss = (-delta.where(delta < 0, 0.0))
     avg_gain = gain.ewm(alpha=1.0/14, min_periods=14, adjust=False).mean()
     avg_loss = loss.ewm(alpha=1.0/14, min_periods=14, adjust=False).mean()
-    rs = avg_gain / avg_loss.replace(0, np.nan)  # Prevent division by zero
-    df['RSI'] = (100 - (100 / (1 + rs))).fillna(50)  # Default to 50 if NaN
+    # Safe division: use numpy to avoid pandas .replace() issues on 3.14
+    avg_loss_vals = avg_loss.values.copy().astype(float)
+    avg_loss_vals[avg_loss_vals == 0] = np.nan
+    rs = avg_gain.values.astype(float) / avg_loss_vals
+    df['RSI'] = pd.Series(100.0 - (100.0 / (1.0 + rs)), index=df.index).fillna(50.0)
 
     # MACD
     df['MACD'] = df['EMA_12'] - df['EMA_26']
@@ -1142,14 +1145,28 @@ def compute_indicators(df):
     df['ATR_14'] = tr.rolling(14).mean()
 
     # Volume analysis — handle NaN/zero volume (common with futures data)
+    # Use numpy arrays directly to avoid all pandas type-coercion issues
     try:
-        vol = df['Volume'].copy().fillna(0).astype(float)
-    except Exception:
-        vol = pd.Series(0.0, index=df.index)
-    df['Volume'] = vol
-    vol_sma = vol.rolling(20).mean()
-    df['Vol_SMA_20'] = vol_sma.mask(vol_sma == 0)
-    df['Vol_ratio'] = np.where(df['Vol_SMA_20'].isna(), 0.0, vol.values / vol_sma.where(vol_sma != 0, np.nan).values)
+        raw_vol = df['Volume'].values
+        vol_arr = np.array(raw_vol, dtype=float)
+        vol_arr = np.where(np.isnan(vol_arr), 0.0, vol_arr)
+    except (ValueError, TypeError):
+        vol_arr = np.zeros(len(df), dtype=float)
+    df['Volume'] = vol_arr
+
+    # Rolling 20-day volume average (manual numpy to avoid pandas issues)
+    vol_sma_arr = np.full(len(df), np.nan)
+    for i in range(19, len(df)):
+        vol_sma_arr[i] = np.mean(vol_arr[i-19:i+1])
+    df['Vol_SMA_20'] = vol_sma_arr
+
+    # Volume ratio — safe division
+    vol_ratio_arr = np.where(
+        (np.isnan(vol_sma_arr)) | (vol_sma_arr == 0),
+        0.0,
+        vol_arr / vol_sma_arr
+    )
+    df['Vol_ratio'] = vol_ratio_arr
 
     return df
 
@@ -1345,7 +1362,7 @@ def compute_multi_tf_probability(df):
     # ── Daily probability (next 1-2 days) ──
     sma_5 = df['Close'].tail(5).mean()
     sma_20 = df['SMA_20'].iloc[-1] if 'SMA_20' in df.columns else df['Close'].tail(20).mean()
-    rsi = df['RSI_14'].iloc[-1] if 'RSI_14' in df.columns else 50
+    rsi = df['RSI'].iloc[-1] if 'RSI' in df.columns else 50
     daily_bull = 50
     rationale_parts = []
     if current > sma_5:
