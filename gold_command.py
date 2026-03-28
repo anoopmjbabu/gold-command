@@ -3680,7 +3680,9 @@ def main():
             week_end = datetime.utcnow().strftime('%b %d, %Y')
 
             # Weekly stats from gold_df
-            week_mask = gold_df.index >= (pd.Timestamp.now(tz='UTC') - pd.Timedelta(days=7))
+            _now = pd.Timestamp.now(tz='UTC')
+            _idx = gold_df.index.tz_localize('UTC') if gold_df.index.tz is None else gold_df.index
+            week_mask = _idx >= (_now - pd.Timedelta(days=7))
             week_df = gold_df[week_mask]
             if len(week_df) >= 2:
                 week_open = week_df['Open'].iloc[0]
@@ -3765,7 +3767,9 @@ def main():
             # Monthly brief — use ~30 days of data
             month_name = datetime.utcnow().strftime('%B %Y')
 
-            month_mask = gold_df.index >= (pd.Timestamp.now(tz='UTC') - pd.Timedelta(days=30))
+            _now_m = pd.Timestamp.now(tz='UTC')
+            _idx_m = gold_df.index.tz_localize('UTC') if gold_df.index.tz is None else gold_df.index
+            month_mask = _idx_m >= (_now_m - pd.Timedelta(days=30))
             month_df = gold_df[month_mask]
             if len(month_df) >= 5:
                 month_open = month_df['Open'].iloc[0]
