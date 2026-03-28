@@ -20,9 +20,11 @@ import time
 import sys
 import os
 
-# Add current directory to path for signal_engine import
+# Add current directory to path for local imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from signal_engine import fetch_multi_timeframe, generate_signals, format_signal_for_beginner
+from realtime_feed import get_realtime_price, get_active_session, CTraderFeed
+from data_fetcher import fetch_all_data_parallel, safe_section, get_section_errors, clear_section_errors
 
 import logging
 logging.basicConfig(level=logging.WARNING)
@@ -906,7 +908,7 @@ def fetch_economic_calendar():
         pass
     if not finnhub_key:
         finnhub_key = os.environ.get('FINNHUB_API_KEY', '')
-    logger.info(f"FinnHub key found: {'YES' if finnhub_key else 'NO'}")
+    logger.info(f"FinnHub key found: {'YES (' + finnhub_key[:6] + '...)' if finnhub_key else 'NO'}")
     if finnhub_key:
         try:
             today = datetime.utcnow().date()
@@ -917,35 +919,64 @@ def fetch_economic_calendar():
             logger.info(f"FinnHub response status: {resp.status_code}")
             if resp.status_code == 200:
                 data = resp.json()
-                # FinnHub wraps events in 'economicCalendar' key
+                logger.info(f"FinnHub response keys: {list(data.keys())}")
+
+                # FinnHub wraps events in 'economicCalendar' → 'result' (nested dict)
                 raw_events = data.get('economicCalendar', data.get('result', []))
                 if isinstance(raw_events, dict):
                     raw_events = raw_events.get('result', [])
-                logger.info(f"FinnHub raw events count: {len(raw_events) if isinstance(raw_events, list) else 'not a list'}")
-                logger.info(f"FinnHub response keys: {list(data.keys())}")
+                # Also handle case where top-level is a list
+                if isinstance(data, list):
+                    raw_events = data
+
+                logger.info(f"FinnHub raw events count: {len(raw_events) if isinstance(raw_events, list) else type(raw_events).__name__}")
+
                 events = []
                 for item in (raw_events if isinstance(raw_events, list) else []):
-                    if item.get('country', '') != 'US':
-                        continue  # Only US events matter for gold
-                    event_name = item.get('event', '')
+                    # FinnHub uses 'country' field — filter to US only
+                    country = item.get('country', '') or ''
+                    if country.upper() not in ('US', 'USA', 'UNITED STATES'):
+                        continue
+                    event_name = item.get('event', '') or item.get('name', '') or ''
+                    if not event_name:
+                        continue
                     classification = _classify_event(event_name)
+
+                    # Handle various date field formats from FinnHub
+                    date_val = item.get('time', '') or item.get('date', '') or ''
+                    event_date = str(date_val)[:10] if date_val else ''
+                    event_time = ''
+                    if isinstance(date_val, str) and 'T' in date_val:
+                        event_time = date_val[11:16]
+
                     events.append({
-                        'date': item.get('time', '')[:10],
-                        'time': item.get('time', '')[11:16] if 'T' in item.get('time', '') else '',
+                        'date': event_date,
+                        'time': event_time,
                         'title': event_name,
                         'impact': classification['impact'],
                         'instruments': classification['instruments'],
-                        'actual': item.get('actual'),
-                        'forecast': item.get('estimate'),
-                        'previous': item.get('prev'),
+                        'actual': item.get('actual', item.get('actualRelease')),
+                        'forecast': item.get('estimate', item.get('forecast')),
+                        'previous': item.get('prev', item.get('previous')),
                         'unit': item.get('unit', ''),
                         'source': 'FinnHub',
                     })
                 events.sort(key=lambda x: (x['date'], x['impact'] != 'HIGH'))
+                logger.info(f"FinnHub parsed {len(events)} US economic events")
                 if events:
                     return events
+            elif resp.status_code == 401:
+                logger.warning("FinnHub API key is invalid or expired (401)")
+            elif resp.status_code == 429:
+                logger.warning("FinnHub rate limit hit (429)")
+            else:
+                logger.warning(f"FinnHub unexpected status: {resp.status_code}")
+        except requests.exceptions.Timeout:
+            logger.warning("FinnHub request timed out after 10s")
+        except requests.exceptions.ConnectionError:
+            logger.warning("FinnHub connection failed — network issue")
         except Exception as e:
-            logger.warning(f"FinnHub calendar fetch failed: {e}")
+            logger.warning(f"FinnHub calendar fetch failed: {type(e).__name__}: {e}")
 
     # ── Fallback: RSS-based approach ──
     cal_feeds = [
@@ -1972,7 +2003,7 @@ def main():
             <span class="sub">XAU/USD Market Intelligence Terminal</span>
             <div style="font-size:9px;color:#5a6a8a;margin-top:3px;letter-spacing:0.5px;">Developed by <span style="color:#f0b90b;">Anoop B.</span></div>
         </div>
-        <div style="display:flex; align-items:center; gap:16px;">
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
             <span class="live-badge"><span class="live-dot"></span>LIVE DATA</span>
             <span style="font-family:'JetBrains Mono'; font-size:11px; color:#6b7a99;">""" +
     datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC') + """</span>
@@ -1986,7 +2017,7 @@ def main():
         st.markdown("""<div style="text-align:center;padding:12px 0 16px;">
             <div style="font-size:18px;font-weight:900;color:#f0b90b;letter-spacing:2px;">GOLD COMMAND</div>
             <div style="font-size:9px;color:#5a6a8a;letter-spacing:1px;margin-top:2px;">XAU/USD Intelligence Terminal</div>
-            <div style="font-size:8px;color:#3d4b6b;margin-top:4px;">v2.0 · by Anoop B.</div>
+            <div style="font-size:8px;color:#3d4b6b;margin-top:4px;">v2.2 · by Anoop B.</div>
         </div>""", unsafe_allow_html=True)
 
         st.markdown('<div style="border-bottom:1px solid #1a2240;margin:8px 0;"></div>', unsafe_allow_html=True)
@@ -2097,33 +2128,113 @@ def main():
             st.cache_data.clear()
             st.rerun()
 
-    # ── Fetch all data ──
+    # ── Fetch real-time spot price ──
+    rt_price = None
+    try:
+        goldapi_key = ''
+        metals_api_key = ''
+        try:
+            goldapi_key = st.secrets.get('GOLDAPI_KEY', '')
+        except Exception:
+            pass
+        try:
+            metals_api_key = st.secrets.get('METALS_API_KEY', '')
+        except Exception:
+            pass
+        if not goldapi_key:
+            goldapi_key = os.environ.get('GOLDAPI_KEY', '')
+        if not metals_api_key:
+            metals_api_key = os.environ.get('METALS_API_KEY', '')
+        rt_price = get_realtime_price(goldapi_key=goldapi_key or None, metals_api_key=metals_api_key or None)
+    except Exception as e:
+        logger.warning(f"Real-time price fetch failed: {e}")
+
+    # ── Get current session ──
+    session_info = get_active_session()
+
+    # ── Fetch all data in parallel ──
+    clear_section_errors()
     with st.spinner("Fetching market data..."):
+        parallel_result = fetch_all_data_parallel()
+        gold_df = parallel_result.get('gold_df')
+        corr_data = parallel_result.get('corr_data', {})
+        news = parallel_result.get('news', [])
+        fetch_errors = parallel_result.get('errors', [])
+        fetch_time_ms = parallel_result.get('fetch_time_ms', 0)
+
+        if gold_df is None:
+            gold_df = pd.DataFrame()
+
+        # Log performance
+        if fetch_time_ms:
+            logger.info(f"Parallel fetch completed in {fetch_time_ms}ms")
+
+    # ── Fallback: use original sequential fetch if parallel module fails ──
+    if gold_df.empty:
         try:
             gold_df = fetch_gold_data(period="6mo", interval="1d")
         except Exception as e:
             gold_df = pd.DataFrame()
-            logger.error(f"Unhandled error fetching gold data: {e}")
+            logger.error(f"Fallback gold data fetch also failed: {e}")
+    if not corr_data:
         try:
             corr_data = fetch_correlated_data(period="3mo")
         except Exception as e:
             corr_data = {}
-            logger.error(f"Unhandled error fetching correlated data: {e}")
+            logger.error(f"Fallback correlated data fetch failed: {e}")
+    if not news:
         try:
             news = fetch_gold_news()
         except Exception as e:
             news = []
-            logger.error(f"Unhandled error fetching news: {e}")
+            logger.error(f"Fallback news fetch failed: {e}")
 
     if gold_df.empty:
         st.error("⚠️ Market data temporarily unavailable — Yahoo Finance rate limit hit. This usually resolves in 1-2 minutes.")
         st.info("Click the **Rerun** button in the top-right corner or wait for auto-refresh.")
         return
 
+    # ── Show fetch performance + data source badges ──
+    data_source_label = "REAL-TIME" if (rt_price and rt_price.get('is_realtime')) else "DELAYED"
+    data_source_color = "#10b981" if data_source_label == "REAL-TIME" else "#f59e0b"
+    data_source_name = rt_price.get('source', 'yfinance') if rt_price else 'yfinance'
+    session_name = session_info.get('name', 'Unknown')
+    session_status = session_info.get('status', 'CLOSED')
+    session_color = session_info.get('color', '#5a6a8a')
+    session_detail = ""
+    if session_status == "ACTIVE":
+        closes_in = session_info.get('closes_in', 0)
+        if closes_in:
+            session_detail = f" · Closes in {closes_in}m"
+    elif session_status == "OPENING_SOON":
+        opens_in = session_info.get('opens_in', 0)
+        if opens_in:
+            session_detail = f" · Opens in {opens_in}m"
+
+    if fetch_errors:
+        err_text = f" · {len(fetch_errors)} warning{'s' if len(fetch_errors)>1 else ''}"
+    else:
+        err_text = ""
+    st.markdown(f"""<div style="display:flex;justify-content:center;gap:16px;padding:4px 0 6px;margin-bottom:4px;flex-wrap:wrap;">
+        <span style="font-size:9px;display:flex;align-items:center;gap:4px;">
+            <span style="width:6px;height:6px;border-radius:50%;background:{data_source_color};display:inline-block;"></span>
+            <span style="color:{data_source_color};font-weight:700;">{data_source_label}</span>
+            <span style="color:#5a6a8a;">via {data_source_name}</span>
+        </span>
+        <span style="font-size:9px;display:flex;align-items:center;gap:4px;">
+            <span style="width:6px;height:6px;border-radius:50%;background:{session_color};display:inline-block;"></span>
+            <span style="color:{session_color};font-weight:700;">{session_name}</span>
+            <span style="color:#5a6a8a;">{session_status}{session_detail}</span>
+        </span>
+        <span style="font-size:9px;color:#5a6a8a;">Fetched in {fetch_time_ms}ms{err_text}</span>
+    </div>""", unsafe_allow_html=True)
+
     # ── Compute everything ──
     gold_df = compute_indicators(gold_df)
     spikes = detect_volume_spikes(gold_df, threshold=1.5)
-    econ_events = fetch_economic_calendar()
+    econ_events = parallel_result.get('econ_events', [])
+    if not econ_events:
+        econ_events = fetch_economic_calendar()
     spikes_correlated = correlate_news_to_spikes(spikes, news, corr_data=corr_data, econ_events=econ_events)
     correlations = compute_correlations(gold_df, corr_data)
     multi_corr = compute_multi_window_correlations(gold_df, corr_data)
@@ -2134,10 +2245,16 @@ def main():
     drivers = assess_macro_drivers(gold_df, corr_data)
     beginner, intermediate, pro = generate_three_tier_analysis(gold_df, spikes_correlated, drivers)
 
-    current = gold_df['Close'].iloc[-1]
-    prev = gold_df['Close'].iloc[-2]
-    daily_chg = current - prev
-    daily_pct = (daily_chg / prev) * 100
+    # Use real-time price if available, otherwise fall back to yfinance close
+    if rt_price and rt_price.get('price'):
+        current = rt_price['price']
+        daily_chg = rt_price.get('change', 0) or (current - gold_df['Close'].iloc[-2])
+        daily_pct = rt_price.get('change_pct', 0) or ((daily_chg / gold_df['Close'].iloc[-2]) * 100)
+    else:
+        current = gold_df['Close'].iloc[-1]
+        prev = gold_df['Close'].iloc[-2]
+        daily_chg = current - prev
+        daily_pct = (daily_chg / prev) * 100
     high_52w = gold_df['High'].max()
     low_52w = gold_df['Low'].min()
 
@@ -3022,30 +3139,85 @@ def main():
     # TAB 5 — SMC ENGINE (Placeholder)
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     with tab_smc:
-        st.markdown("""<div class="intel-card" style="padding:30px;text-align:center;">
-            <div style="font-size:32px;margin-bottom:12px;">🔲</div>
-            <h3 style="color:#f0b90b;margin-bottom:8px;">Smart Money Concepts Engine</h3>
-            <p style="color:#8892ab;font-size:13px;line-height:1.6;">
-                Order Blocks · Liquidity Sweeps · Break of Structure · Fair Value Gaps<br>
-                Multi-timeframe cascade: Daily → 4H → 1H → 15m → 5m<br><br>
-                <span style="color:#f59e0b;font-weight:600;">Coming Soon</span> — This module will detect institutional order flow patterns
-                across timeframes and integrate with the signal engine for higher-conviction entries.
-            </p>
+        st.markdown("""<div class="intel-card" style="padding:30px;">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+                <div style="font-size:28px;">🔲</div>
+                <div>
+                    <h3 style="color:#f0b90b;margin:0;">Smart Money Concepts Engine</h3>
+                    <div style="font-size:10px;color:#f59e0b;font-weight:700;letter-spacing:1px;margin-top:4px;">PRO FEATURE · COMING Q2 2026</div>
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
+                <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:14px;">
+                    <div style="font-size:10px;font-weight:700;color:#ef4444;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Order Blocks</div>
+                    <div style="font-size:12px;color:#a8b2c8;line-height:1.6;">Detect institutional supply/demand zones where banks placed large orders. Identifies bullish OB (last bearish candle before impulsive move up) and bearish OB (last bullish candle before drop).</div>
+                </div>
+                <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:14px;">
+                    <div style="font-size:10px;font-weight:700;color:#a855f7;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Fair Value Gaps (FVG)</div>
+                    <div style="font-size:12px;color:#a8b2c8;line-height:1.6;">Spot price imbalances where candle wicks don't overlap — areas price tends to revisit. High-probability entry zones when aligned with order blocks.</div>
+                </div>
+                <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:14px;">
+                    <div style="font-size:10px;font-weight:700;color:#10b981;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Break of Structure (BOS)</div>
+                    <div style="font-size:12px;color:#a8b2c8;line-height:1.6;">Detect when price breaks a significant swing high/low, confirming trend continuation. Filtered by timeframe alignment (Daily → 4H → 1H).</div>
+                </div>
+                <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:14px;">
+                    <div style="font-size:10px;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Liquidity Sweeps</div>
+                    <div style="font-size:12px;color:#a8b2c8;line-height:1.6;">Identify stop-hunt moves where smart money sweeps retail stop-losses at key levels before reversing. Critical for timing entries with precision.</div>
+                </div>
+            </div>
+            <div style="background:rgba(240,185,11,0.04);border:1px solid rgba(240,185,11,0.12);border-radius:8px;padding:14px;text-align:center;">
+                <div style="font-size:11px;color:#f0b90b;font-weight:700;margin-bottom:6px;">Multi-Timeframe Cascade: Daily → 4H → 1H → 15m → 5m</div>
+                <div style="font-size:10px;color:#8892ab;">SMC signals will integrate with the existing Signal Engine for confluence-based entries with institutional backing.</div>
+            </div>
         </div>""", unsafe_allow_html=True)
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # TAB 6 — BACKTEST ENGINE (Placeholder)
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     with tab_backtest:
-        st.markdown("""<div class="intel-card" style="padding:30px;text-align:center;">
-            <div style="font-size:32px;margin-bottom:12px;">📈</div>
-            <h3 style="color:#f0b90b;margin-bottom:8px;">Signal Backtesting Engine</h3>
-            <p style="color:#8892ab;font-size:13px;line-height:1.6;">
-                Win Rate · Average R:R · Max Drawdown · Profit Factor<br>
-                Per-pattern breakdown · Session performance · Equity curve<br><br>
-                <span style="color:#f59e0b;font-weight:600;">Coming Soon</span> — This module will backtest all signal engine patterns
-                against 3-6 months of historical data and show which setups actually perform.
-            </p>
+        st.markdown("""<div class="intel-card" style="padding:30px;">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+                <div style="font-size:28px;">📈</div>
+                <div>
+                    <h3 style="color:#f0b90b;margin:0;">Signal Backtesting Engine</h3>
+                    <div style="font-size:10px;color:#f59e0b;font-weight:700;letter-spacing:1px;margin-top:4px;">PRO FEATURE · COMING Q2 2026</div>
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;">
+                <div style="background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.12);border-radius:8px;padding:16px;text-align:center;">
+                    <div style="font-size:24px;font-weight:900;color:#10b981;font-family:JetBrains Mono;">—%</div>
+                    <div style="font-size:9px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px;">Win Rate</div>
+                </div>
+                <div style="background:rgba(59,130,246,0.06);border:1px solid rgba(59,130,246,0.12);border-radius:8px;padding:16px;text-align:center;">
+                    <div style="font-size:24px;font-weight:900;color:#60a5fa;font-family:JetBrains Mono;">—:—</div>
+                    <div style="font-size:9px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px;">Avg Risk:Reward</div>
+                </div>
+                <div style="background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.12);border-radius:8px;padding:16px;text-align:center;">
+                    <div style="font-size:24px;font-weight:900;color:#ef4444;font-family:JetBrains Mono;">—%</div>
+                    <div style="font-size:9px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px;">Max Drawdown</div>
+                </div>
+                <div style="background:rgba(240,185,11,0.06);border:1px solid rgba(240,185,11,0.12);border-radius:8px;padding:16px;text-align:center;">
+                    <div style="font-size:24px;font-weight:900;color:#f0b90b;font-family:JetBrains Mono;">—</div>
+                    <div style="font-size:9px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px;">Profit Factor</div>
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+                <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:14px;">
+                    <div style="font-size:10px;font-weight:700;color:#a8b2c8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Per-Pattern Breakdown</div>
+                    <div style="font-size:12px;color:#6b7a99;line-height:1.6;">Win rate, avg R:R, and frequency for each pattern type: Hammer, Engulfing, Pin Bar, Doji, Shooting Star — filtered by S/R proximity and trend alignment.</div>
+                </div>
+                <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:14px;">
+                    <div style="font-size:10px;font-weight:700;color:#a8b2c8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Session Performance</div>
+                    <div style="font-size:12px;color:#6b7a99;line-height:1.6;">Compare signal accuracy across London, NY, and Asia sessions. Reveals which setups work best during high-liquidity overlap hours vs. quiet sessions.</div>
+                </div>
+            </div>
+            <div style="background:rgba(16,185,129,0.04);border:1px solid rgba(16,185,129,0.12);border-radius:8px;padding:14px;">
+                <div style="font-size:9px;font-weight:700;color:#5a6a8a;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Equity Curve Preview</div>
+                <div style="height:60px;background:linear-gradient(90deg,rgba(16,185,129,0.1),rgba(16,185,129,0.05));border-radius:4px;display:flex;align-items:flex-end;gap:2px;padding:4px 8px;">""" +
+                "".join([f'<div style="width:3px;background:#10b981;opacity:{0.3+(i%5)*0.15};border-radius:1px;height:{15+((i*7+3)%40)}px;"></div>' for i in range(60)]) +
+                """</div>
+                <div style="font-size:10px;color:#5a6a8a;margin-top:6px;text-align:center;font-style:italic;">Simulated equity curve — real backtest data will replace this when the engine ships.</div>
+            </div>
         </div>""", unsafe_allow_html=True)
 
     # ══════════════════════════════════════════════════
@@ -3054,7 +3226,7 @@ def main():
     st.markdown(f"""<div class="section-divider"></div>
     <div style="text-align:center;padding:20px 0;">
         <div style="font-size:12px;font-weight:900;color:#f0b90b;letter-spacing:3px;margin-bottom:6px;">GOLD COMMAND</div>
-        <div style="font-size:10px;color:#8a94a8;margin-bottom:6px;">XAU/USD Market Intelligence Terminal&nbsp;&nbsp;·&nbsp;&nbsp;v2.1</div>
+        <div style="font-size:10px;color:#8a94a8;margin-bottom:6px;">XAU/USD Market Intelligence Terminal&nbsp;&nbsp;·&nbsp;&nbsp;v2.2</div>
         <div style="font-size:9px;color:#5a6a8a;margin-bottom:8px;">Developed by <span style="color:#f0b90b;font-weight:600;">Anoop B.</span></div>
         <div style="display:flex;justify-content:center;gap:20px;margin-bottom:8px;">
             <span style="font-size:8px;color:#3d4b6b;">📊 6 Intelligence Modules</span>
@@ -3069,8 +3241,8 @@ def main():
             </a>
         </div>
         <div style="font-size:8px;color:#3d4b6b;letter-spacing:0.5px;">
-            Data: Yahoo Finance, Google News RSS&nbsp;&nbsp;|&nbsp;&nbsp;Charts: TradingView&nbsp;&nbsp;|&nbsp;&nbsp;Signals: Proprietary Engine<br>
-            <span style="color:#f59e0b;">⚠️ This is not financial advice.</span> All data is delayed and for informational purposes only.
+            Data: GoldAPI · FinnHub · Yahoo Finance · Google News RSS&nbsp;&nbsp;|&nbsp;&nbsp;Charts: TradingView&nbsp;&nbsp;|&nbsp;&nbsp;Signals: Proprietary Engine&nbsp;&nbsp;|&nbsp;&nbsp;Broker: ICMarkets<br>
+            <span style="color:#f59e0b;">⚠️ This is not financial advice.</span> All data is for informational purposes only.
         </div>
     </div>""", unsafe_allow_html=True)
 
