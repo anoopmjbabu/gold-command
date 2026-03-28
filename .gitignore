@@ -4,3 +4,4 @@ daily_brief_data.json
 gold_technical_analysis.html
 launch_gold_command.bat
 *.log
+.streamlit/secrets.toml

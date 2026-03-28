@@ -565,6 +565,38 @@ header {visibility: hidden;}
 .brief-event-chip.high { background: rgba(239,68,68,0.1); color: #ef4444; border: 1px solid rgba(239,68,68,0.15); }
 .brief-event-chip.medium { background: rgba(245,158,11,0.1); color: #f59e0b; border: 1px solid rgba(245,158,11,0.15); }
 .brief-event-chip.low { background: rgba(107,122,153,0.08); color: #8892ab; border: 1px solid rgba(107,122,153,0.1); }
+/* ─── Brief Calendar Table ─── */
+.brief-cal-table {
+    width: 100%; border-collapse: collapse; margin-top: 6px;
+}
+.brief-cal-table th {
+    font-size: 8px; font-weight: 700; color: #5a6a8a; text-transform: uppercase;
+    letter-spacing: 0.8px; padding: 4px 8px; text-align: left;
+    border-bottom: 1px solid rgba(26,34,64,0.5);
+}
+.brief-cal-table td {
+    font-size: 11px; padding: 6px 8px; color: #c8d0e4;
+    border-bottom: 1px solid rgba(26,34,64,0.25);
+    font-family: 'JetBrains Mono', monospace;
+}
+.brief-cal-table tr:last-child td { border-bottom: none; }
+.cal-impact-dot {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 4px;
+}
+.cal-impact-dot.high { background: #ef4444; }
+.cal-impact-dot.medium { background: #f59e0b; }
+.cal-impact-dot.low { background: #6b7a99; }
+.cal-actual-beat { color: #10b981; font-weight: 700; }
+.cal-actual-miss { color: #ef4444; font-weight: 700; }
+.cal-actual-inline { color: #f0b90b; font-weight: 700; }
+.cal-pending { color: #5a6a8a; font-style: italic; }
+.cal-instrument-chip {
+    font-size: 8px; padding: 1px 5px; border-radius: 3px; font-weight: 700;
+    display: inline-flex; align-items: center; gap: 2px; margin-right: 2px;
+}
+.cal-instrument-chip.bullish { background: rgba(16,185,129,0.1); color: #10b981; }
+.cal-instrument-chip.bearish { background: rgba(239,68,68,0.1); color: #ef4444; }
+.cal-instrument-chip.mixed { background: rgba(245,158,11,0.1); color: #f59e0b; }
 /* ─── Brief Trend Summary ─── */
 .brief-trend-line {
     display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
@@ -828,9 +860,86 @@ def fetch_correlated_data(period="3mo"):
 
 @st.cache_data(ttl=1800)
 def fetch_economic_calendar():
-    """Fetch upcoming and recent economic events that impact gold from Google News RSS.
-    Returns list of dicts: [{date, title, impact, instruments}]"""
-    # Key economic terms that move gold
+    """Fetch economic calendar from FinnHub (free API) with actual/forecast/previous.
+    Falls back to RSS-based approach if API key not available.
+    Returns list of dicts with structured event data."""
+
+    # ── Impact + instrument mapping for known event types ──
+    _event_impact_map = {
+        # HIGH IMPACT events
+        'nonfarm payrolls': {'impact': 'HIGH', 'instruments': {'Gold': 'inverse', 'DXY': 'direct', 'US 10Y': 'direct', 'S&P 500': 'mixed'}},
+        'cpi': {'impact': 'HIGH', 'instruments': {'Gold': 'direct', 'DXY': 'inverse', 'US 10Y': 'direct'}},
+        'core cpi': {'impact': 'HIGH', 'instruments': {'Gold': 'direct', 'DXY': 'inverse', 'US 10Y': 'direct'}},
+        'interest rate decision': {'impact': 'HIGH', 'instruments': {'Gold': 'inverse', 'DXY': 'direct', 'US 10Y': 'direct', 'S&P 500': 'inverse'}},
+        'fomc': {'impact': 'HIGH', 'instruments': {'Gold': 'inverse', 'DXY': 'direct', 'US 10Y': 'direct'}},
+        'pce price index': {'impact': 'HIGH', 'instruments': {'Gold': 'direct', 'DXY': 'inverse'}},
+        'core pce': {'impact': 'HIGH', 'instruments': {'Gold': 'direct', 'DXY': 'inverse'}},
+        'gdp': {'impact': 'HIGH', 'instruments': {'Gold': 'inverse', 'DXY': 'direct', 'S&P 500': 'direct'}},
+        'unemployment rate': {'impact': 'HIGH', 'instruments': {'Gold': 'direct', 'DXY': 'inverse'}},
+        # MEDIUM IMPACT events
+        'pmi': {'impact': 'MEDIUM', 'instruments': {'Gold': 'inverse', 'DXY': 'direct'}},
+        'ism manufacturing': {'impact': 'MEDIUM', 'instruments': {'Gold': 'inverse', 'DXY': 'direct', 'S&P 500': 'direct'}},
+        'ism services': {'impact': 'MEDIUM', 'instruments': {'Gold': 'inverse', 'DXY': 'direct'}},
+        'initial jobless claims': {'impact': 'MEDIUM', 'instruments': {'Gold': 'direct', 'DXY': 'inverse'}},
+        'retail sales': {'impact': 'MEDIUM', 'instruments': {'Gold': 'inverse', 'DXY': 'direct', 'S&P 500': 'direct'}},
+        'consumer confidence': {'impact': 'MEDIUM', 'instruments': {'Gold': 'inverse', 'S&P 500': 'direct'}},
+        'durable goods': {'impact': 'MEDIUM', 'instruments': {'Gold': 'inverse', 'DXY': 'direct'}},
+        'housing starts': {'impact': 'LOW', 'instruments': {'DXY': 'direct'}},
+        'existing home sales': {'impact': 'LOW', 'instruments': {'DXY': 'direct'}},
+        'trade balance': {'impact': 'LOW', 'instruments': {'DXY': 'direct'}},
+    }
+
+    def _classify_event(event_name):
+        """Match event name to impact/instrument data."""
+        name_lower = event_name.lower()
+        for key, data in _event_impact_map.items():
+            if key in name_lower:
+                return data
+        # Default fallback
+        return {'impact': 'LOW', 'instruments': {'DXY': 'mixed'}}
+
+    # ── Try FinnHub API first (check Streamlit secrets, then env var) ──
+    finnhub_key = ''
+    try:
+        finnhub_key = st.secrets.get('FINNHUB_API_KEY', '')
+    except Exception:
+        pass
+    if not finnhub_key:
+        finnhub_key = os.environ.get('FINNHUB_API_KEY', '')
+    if finnhub_key:
+        try:
+            today = datetime.utcnow().date()
+            from_date = (today - timedelta(days=3)).strftime('%Y-%m-%d')
+            to_date = (today + timedelta(days=7)).strftime('%Y-%m-%d')
+            url = f"https://finnhub.io/api/v1/calendar/economic?from={from_date}&to={to_date}&token={finnhub_key}"
+            resp = requests.get(url, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                events = []
+                for item in data.get('economicCalendar', []):
+                    if item.get('country', '') != 'US':
+                        continue  # Only US events matter for gold
+                    event_name = item.get('event', '')
+                    classification = _classify_event(event_name)
+                    events.append({
+                        'date': item.get('time', '')[:10],
+                        'time': item.get('time', '')[11:16] if 'T' in item.get('time', '') else '',
+                        'title': event_name,
+                        'impact': classification['impact'],
+                        'instruments': classification['instruments'],
+                        'actual': item.get('actual'),
+                        'forecast': item.get('estimate'),
+                        'previous': item.get('prev'),
+                        'unit': item.get('unit', ''),
+                        'source': 'FinnHub',
+                    })
+                events.sort(key=lambda x: (x['date'], x['impact'] != 'HIGH'))
+                if events:
+                    return events
+        except Exception as e:
+            logger.warning(f"FinnHub calendar fetch failed: {e}")
+
+    # ── Fallback: RSS-based approach ──
     cal_feeds = [
         "https://news.google.com/rss/search?q=NFP+jobs+report+OR+non+farm+payrolls&hl=en-US&gl=US&ceid=US:en&when=7d",
         "https://news.google.com/rss/search?q=CPI+inflation+data+OR+consumer+price+index&hl=en-US&gl=US&ceid=US:en&when=7d",
@@ -840,19 +949,6 @@ def fetch_economic_calendar():
         "https://news.google.com/rss/search?q=GDP+data+OR+retail+sales+data&hl=en-US&gl=US&ceid=US:en&when=7d",
         "https://news.google.com/rss/search?q=PCE+inflation+OR+core+PCE&hl=en-US&gl=US&ceid=US:en&when=7d",
     ]
-
-    # Impact classification rules
-    _high_impact = ['nfp', 'non-farm', 'non farm', 'fomc', 'rate decision', 'cpi', 'inflation data',
-                    'pce', 'core pce', 'gdp', 'powell', 'fed chair']
-    _med_impact = ['pmi', 'ism', 'jobless claims', 'unemployment', 'retail sales', 'fed minutes',
-                   'consumer confidence', 'housing', 'durable goods']
-    _instrument_map = {
-        'XAU': ['gold', 'safe haven', 'bullion'],
-        'USD': ['dollar', 'dxy', 'fed', 'fomc', 'rate', 'inflation', 'cpi', 'pce', 'nfp', 'jobs',
-                'gdp', 'retail', 'claims', 'payroll', 'employment', 'unemployment', 'powell'],
-        'BOND': ['yield', 'treasury', 'bond', '10-year', '10y'],
-        'SPX': ['stocks', 'equity', 's&p', 'nasdaq', 'wall street'],
-    }
 
     events = []
     seen_titles = set()
@@ -866,7 +962,6 @@ def fetch_economic_calendar():
                 seen_titles.add(title)
                 title_lower = title.lower()
 
-                # Parse date
                 pub_date = None
                 for date_field in ['published_parsed', 'updated_parsed']:
                     parsed = entry.get(date_field)
@@ -879,32 +974,24 @@ def fetch_economic_calendar():
                 if not pub_date:
                     continue
 
-                # Classify impact
-                impact = "LOW"
-                if any(kw in title_lower for kw in _high_impact):
-                    impact = "HIGH"
-                elif any(kw in title_lower for kw in _med_impact):
-                    impact = "MEDIUM"
-
-                # Detect affected instruments
-                instruments = []
-                for instr, keywords in _instrument_map.items():
-                    if any(kw in title_lower for kw in keywords):
-                        instruments.append(instr)
-                if not instruments:
-                    instruments = ['USD']  # Default for econ data
+                classification = _classify_event(title)
 
                 events.append({
-                    'date': pub_date,
+                    'date': str(pub_date),
+                    'time': '',
                     'title': title,
-                    'impact': impact,
-                    'instruments': instruments,
+                    'impact': classification['impact'],
+                    'instruments': classification['instruments'],
+                    'actual': None,
+                    'forecast': None,
+                    'previous': None,
+                    'unit': '',
+                    'source': 'RSS',
                 })
         except Exception as e:
-            logger.warning(f"Economic calendar fetch failed: {e}")
+            logger.warning(f"Economic calendar RSS fetch failed: {e}")
 
-    # Deduplicate by date + similar title
-    events.sort(key=lambda x: (x['date'], x['impact'] != 'HIGH'), reverse=False)
+    events.sort(key=lambda x: (x['date'], x['impact'] != 'HIGH'))
     return events
 
 
@@ -1678,22 +1765,77 @@ def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, 
         )
     drivers_chips_html += '</div>'
 
-    # ── Today's Key Events ──
+    # ── Today's Key Events (calendar table with actual/forecast/previous) ──
     events_html = ""
     if econ_events:
         today_str = datetime.utcnow().strftime('%Y-%m-%d')
+        # Today's events first, then upcoming
         today_events = [e for e in econ_events if today_str in str(e.get('date', ''))]
-        if not today_events:
-            # Show upcoming events if none today
-            today_events = econ_events[:5]
-        if today_events:
-            events_html = '<div class="brief-events-row">'
-            events_html += '<div class="brief-events-label">&#128197; Key Events Today</div>'
-            for evt in today_events[:6]:
+        upcoming_events = [e for e in econ_events if str(e.get('date', '')) > today_str]
+        display_events = today_events[:6] if today_events else upcoming_events[:5]
+        cal_label = "Key Events Today" if today_events else "Upcoming Events"
+
+        if display_events:
+            events_html = '<div class="brief-events-row" style="padding:10px 12px;">'
+            events_html += f'<div class="brief-events-label">&#128197; {cal_label}</div>'
+            events_html += '<table class="brief-cal-table"><thead><tr>'
+            events_html += '<th>Event</th><th>Actual</th><th>Forecast</th><th>Previous</th><th>Impact On</th>'
+            events_html += '</tr></thead><tbody>'
+
+            for evt in display_events:
                 impact_lvl = evt.get('impact', 'LOW').lower()
-                evt_title = evt.get('title', '')[:50]
-                events_html += f'<span class="brief-event-chip {impact_lvl}">{evt_title}</span>'
-            events_html += '</div>'
+                evt_title = evt.get('title', '')[:45]
+                evt_time = evt.get('time', '')
+
+                # Actual vs Forecast comparison
+                actual = evt.get('actual')
+                forecast = evt.get('forecast')
+                previous = evt.get('previous')
+                unit = evt.get('unit', '')
+
+                if actual is not None:
+                    # Determine beat/miss
+                    if forecast is not None:
+                        if actual > forecast:
+                            actual_class = "cal-actual-beat"
+                        elif actual < forecast:
+                            actual_class = "cal-actual-miss"
+                        else:
+                            actual_class = "cal-actual-inline"
+                    else:
+                        actual_class = "cal-actual-inline"
+                    actual_html = f'<span class="{actual_class}">{actual}{unit}</span>'
+                else:
+                    actual_html = '<span class="cal-pending">Pending</span>'
+
+                forecast_html = f'{forecast}{unit}' if forecast is not None else '—'
+                previous_html = f'{previous}{unit}' if previous is not None else '—'
+
+                # Instrument impact chips
+                instruments = evt.get('instruments', {})
+                instr_chips = ""
+                if isinstance(instruments, dict):
+                    for instr_name, direction in list(instruments.items())[:3]:
+                        chip_class = "bullish" if direction == "direct" else "bearish" if direction == "inverse" else "mixed"
+                        arrow = "&#9650;" if direction == "direct" else "&#9660;" if direction == "inverse" else "&#9654;"
+                        instr_chips += f'<span class="cal-instrument-chip {chip_class}">{instr_name} {arrow}</span>'
+                elif isinstance(instruments, list):
+                    for instr_name in instruments[:3]:
+                        instr_chips += f'<span class="cal-instrument-chip mixed">{instr_name}</span>'
+
+                time_str = f'<span style="color:#5a6a8a;font-size:9px;"> {evt_time}</span>' if evt_time else ''
+
+                events_html += (
+                    f'<tr>'
+                    f'<td style="font-family:Inter,sans-serif;"><span class="cal-impact-dot {impact_lvl}"></span>{evt_title}{time_str}</td>'
+                    f'<td>{actual_html}</td>'
+                    f'<td style="color:#8892ab;">{forecast_html}</td>'
+                    f'<td style="color:#6b7a99;">{previous_html}</td>'
+                    f'<td>{instr_chips}</td>'
+                    f'</tr>'
+                )
+
+            events_html += '</tbody></table></div>'
 
     # ── RSI block ──
     if rsi < 30:
