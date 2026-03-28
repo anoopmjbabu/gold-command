@@ -590,16 +590,55 @@ header {visibility: hidden;}
     border: 1px solid #1a2240; border-radius: 10px;
     padding: 12px 16px; margin-bottom: 10px;
 }
+/* ─── News Impact Sections ─── */
+.news-impact-section {
+    margin-bottom: 14px;
+}
+.news-impact-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 12px; border-radius: 6px;
+    margin-bottom: 6px; font-size: 10px; font-weight: 800;
+    letter-spacing: 0.8px; text-transform: uppercase;
+}
+.news-impact-header.high {
+    background: rgba(239,68,68,0.08); color: #ef4444;
+    border-left: 3px solid #ef4444;
+}
+.news-impact-header.medium {
+    background: rgba(245,158,11,0.08); color: #f59e0b;
+    border-left: 3px solid #f59e0b;
+}
+.news-impact-header.low {
+    background: rgba(107,122,153,0.06); color: #6b7a99;
+    border-left: 3px solid #3d4b6b;
+}
 .rss-item {
-    display: flex; justify-content: space-between; align-items: flex-start;
-    padding: 8px 0; border-bottom: 1px solid rgba(26,34,64,0.5);
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(26,34,64,0.3);
     font-size: 12px;
 }
 .rss-item:last-child { border-bottom: none; }
-.rss-title { color: #c8d0e4; flex: 1; line-height: 1.4; }
-.rss-title a { color: #c8d0e4; text-decoration: none; }
-.rss-title a:hover { color: #f0b90b; }
-.rss-impact-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+.rss-item-title {
+    color: #c8d0e4; line-height: 1.5; font-size: 12px;
+    word-wrap: break-word; overflow-wrap: break-word;
+}
+.rss-item-title a { color: #c8d0e4; text-decoration: none; }
+.rss-item-title a:hover { color: #f0b90b; }
+.rss-item-meta {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin-top: 5px;
+}
+.rss-chip {
+    font-size: 9px; padding: 2px 7px; border-radius: 4px;
+    font-weight: 700; display: inline-flex; align-items: center; gap: 3px;
+    white-space: nowrap;
+}
+.rss-date { font-size: 9px; color: #5a6a8a; }
+.rss-breaking-bar {
+    border-left: 3px solid #ef4444;
+    background: rgba(239,68,68,0.04);
+    padding-left: 10px;
+}
 .rss-tag {
     font-size: 8px; font-weight: 700; padding: 2px 6px; border-radius: 3px;
     text-transform: uppercase; letter-spacing: 0.5px;
@@ -2595,72 +2634,109 @@ def main():
                 <span class="pill pill-live">RSS · AUTO-REFRESH</span>
             </div>""", unsafe_allow_html=True)
             if news:
-                # Directional impact rules: (keywords, instrument_name, typical_gold_impact, icon_color)
+                # Impact classification rules
                 _impact_rules = {
-                    'gold': {
-                        'keywords': ['gold', 'xau', 'bullion', 'precious metal', 'safe haven', 'gold price', 'gold demand', 'gold reserve'],
-                        'name': 'Gold', 'icon': '&#129351;', 'color': '#f0b90b',
-                    },
-                    'dollar': {
-                        'keywords': ['dollar', 'usd', 'dxy', 'fed', 'federal reserve', 'interest rate', 'rate hike', 'rate cut', 'fomc', 'powell'],
-                        'name': 'Dollar', 'icon': '&#36;', 'color': '#10b981',
-                    },
-                    'oil': {
-                        'keywords': ['oil', 'crude', 'opec', 'brent', 'wti', 'petroleum', 'energy'],
-                        'name': 'Oil', 'icon': '&#128167;', 'color': '#8b5cf6',
-                    },
-                    'bonds': {
-                        'keywords': ['bond', 'yield', 'treasury', '10-year', '10y', 'debt', 'sovereign'],
-                        'name': 'Bonds', 'icon': '&#128196;', 'color': '#3b82f6',
-                    },
                     'geopolitical': {
                         'keywords': ['war', 'attack', 'strike', 'nuclear', 'bomb', 'missile', 'invasion', 'crisis', 'emergency', 'sanctions', 'conflict', 'geopolitical', 'tariff', 'trade war'],
                         'name': 'Geopolitical', 'icon': '&#9888;', 'color': '#ef4444',
-                        # Geopolitical events: Gold ↑, Stocks ↓, VIX ↑
-                        'impacts': [('Gold', '↑', '#10b981'), ('Stocks', '↓', '#ef4444'), ('VIX', '↑', '#f59e0b')],
+                        'impacts': [('Gold', '&#8593;', '#10b981'), ('Stocks', '&#8595;', '#ef4444'), ('VIX', '&#8593;', '#f59e0b')],
+                        'level': 'high',
+                    },
+                    'dollar': {
+                        'keywords': ['dollar', 'usd', 'dxy', 'fed', 'federal reserve', 'interest rate', 'rate hike', 'rate cut', 'fomc', 'powell'],
+                        'name': 'Dollar', 'icon': '&#36;', 'color': '#10b981', 'level': 'high',
+                    },
+                    'gold': {
+                        'keywords': ['gold', 'xau', 'bullion', 'precious metal', 'safe haven', 'gold price', 'gold demand', 'gold reserve'],
+                        'name': 'Gold', 'icon': '&#129351;', 'color': '#f0b90b', 'level': 'medium',
+                    },
+                    'bonds': {
+                        'keywords': ['bond', 'yield', 'treasury', '10-year', '10y', 'debt', 'sovereign'],
+                        'name': 'Bonds', 'icon': '&#128196;', 'color': '#3b82f6', 'level': 'medium',
+                    },
+                    'oil': {
+                        'keywords': ['oil', 'crude', 'opec', 'brent', 'wti', 'petroleum', 'energy'],
+                        'name': 'Oil', 'icon': '&#128167;', 'color': '#8b5cf6', 'level': 'medium',
                     },
                     'stocks': {
                         'keywords': ['stock', 's&p', 'nasdaq', 'dow', 'equity', 'wall street', 'rally', 'selloff', 'correction', 'bear market', 'bull market'],
-                        'name': 'Stocks', 'icon': '&#128200;', 'color': '#f59e0b',
+                        'name': 'Stocks', 'icon': '&#128200;', 'color': '#f59e0b', 'level': 'low',
                     },
                 }
-                for article in news[:20]:
-                    date_str = article['published'].strftime('%b %d, %H:%M') if article['published'] else ""
-                    source = f" — {article['source']}" if article['source'] else ""
-                    title_lower = article['title'].lower()
 
-                    # Detect impacts with directional chips
-                    impact_chips = ""
+                # Classify each article into high/medium/low
+                high_items, medium_items, low_items = [], [], []
+
+                for article in news[:25]:
+                    date_str = article['published'].strftime('%b %d, %H:%M') if article['published'] else ""
+                    source = article['source'] if article['source'] else ""
+                    title_lower = article['title'].lower()
+                    safe_link = article['link'] if article['link'].startswith(('http://', 'https://')) else '#'
+
+                    # Detect impacts
+                    chips_html = ""
                     is_breaking = False
-                    matched_cats = []
+                    highest_level = 'low'
+                    level_priority = {'high': 3, 'medium': 2, 'low': 1}
+
                     for cat_key, rule in _impact_rules.items():
                         if any(kw in title_lower for kw in rule['keywords']):
-                            matched_cats.append(cat_key)
+                            if level_priority.get(rule['level'], 0) > level_priority.get(highest_level, 0):
+                                highest_level = rule['level']
                             if cat_key == 'geopolitical':
                                 is_breaking = True
-                                # Show directional impacts for geopolitical events
                                 for instr, direction, dcolor in rule.get('impacts', []):
-                                    impact_chips += (f'<span style="font-size:9px;padding:2px 6px;border-radius:3px;'
-                                                     f'background:{dcolor}15;color:{dcolor};font-weight:700;'
-                                                     f'display:inline-flex;align-items:center;gap:2px;">'
-                                                     f'{instr} {direction}</span> ')
+                                    chips_html += (f'<span class="rss-chip" style="background:{dcolor}15;color:{dcolor};">'
+                                                   f'{instr} {direction}</span>')
                             else:
                                 c = rule['color']
-                                impact_chips += (f'<span style="font-size:9px;padding:2px 6px;border-radius:3px;'
-                                                 f'background:{c}15;color:{c};font-weight:700;'
-                                                 f'display:inline-flex;align-items:center;gap:3px;">'
-                                                 f'{rule["icon"]} {rule["name"]}</span> ')
+                                chips_html += (f'<span class="rss-chip" style="background:{c}15;color:{c};">'
+                                               f'{rule["icon"]} {rule["name"]}</span>')
 
-                    breaking_class = ' rss-breaking' if is_breaking else ''
-                    prefix = '<span style="color:#ef4444;font-weight:700;font-size:10px;">&#9889; BREAKING </span>' if is_breaking else ''
-                    safe_link = article['link'] if article['link'].startswith(('http://', 'https://')) else '#'
-                    st.markdown(f"""<div class="rss-item{breaking_class}">
-                        <div class="rss-title">
-                            {prefix}<a href="{safe_link}" target="_blank" rel="noopener noreferrer">{article['title']}</a>
-                            <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">{impact_chips}</div>
-                            <div style="font-size:9px;color:#6b7a99;margin-top:2px;">{date_str}{source}</div>
-                        </div>
-                    </div>""", unsafe_allow_html=True)
+                    # Build article HTML
+                    breaking_class = ' rss-breaking-bar' if is_breaking else ''
+                    prefix = '<span style="color:#ef4444;font-weight:700;font-size:10px;">&#9889; BREAKING</span> ' if is_breaking else ''
+                    item_html = (
+                        f'<div class="rss-item{breaking_class}">'
+                        f'<div class="rss-item-title">{prefix}'
+                        f'<a href="{safe_link}" target="_blank" rel="noopener noreferrer">{article["title"]}</a></div>'
+                        f'<div class="rss-item-meta">{chips_html}'
+                        f'<span class="rss-date">{date_str} — {source}</span>'
+                        f'</div></div>'
+                    )
+
+                    if highest_level == 'high':
+                        high_items.append(item_html)
+                    elif highest_level == 'medium':
+                        medium_items.append(item_html)
+                    else:
+                        low_items.append(item_html)
+
+                # Render all sections as one HTML block (no gaps)
+                full_html = ""
+
+                if high_items:
+                    full_html += '<div class="news-impact-section">'
+                    full_html += f'<div class="news-impact-header high">&#128308; High Impact <span style="font-size:8px;font-weight:400;color:#ef444480;">({len(high_items)} articles)</span></div>'
+                    full_html += "".join(high_items)
+                    full_html += '</div>'
+
+                if medium_items:
+                    full_html += '<div class="news-impact-section">'
+                    full_html += f'<div class="news-impact-header medium">&#128992; Medium Impact <span style="font-size:8px;font-weight:400;color:#f59e0b80;">({len(medium_items)} articles)</span></div>'
+                    full_html += "".join(medium_items)
+                    full_html += '</div>'
+
+                if low_items:
+                    full_html += '<div class="news-impact-section">'
+                    full_html += f'<div class="news-impact-header low">&#9898; Low Impact <span style="font-size:8px;font-weight:400;color:#6b7a9980;">({len(low_items)} articles)</span></div>'
+                    full_html += "".join(low_items)
+                    full_html += '</div>'
+
+                if full_html:
+                    st.markdown(full_html, unsafe_allow_html=True)
+                else:
+                    st.markdown('<div style="color:#6b7a99;font-size:12px;padding:8px;">No matching news found.</div>', unsafe_allow_html=True)
             else:
                 st.markdown('<div style="color:#6b7a99;font-size:12px;padding:8px;">No news available. Check internet connection.</div>', unsafe_allow_html=True)
 
