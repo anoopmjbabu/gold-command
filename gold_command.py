@@ -1929,11 +1929,44 @@ def render_mtf_fib_html(fib_data):
 
 
 def detect_volume_spikes(df, threshold=1.5):
-    """Detect candles with abnormally high volume."""
+    """Detect significant market moves using BOTH volume AND price-change triggers.
+    A $200 move on gold should always show up, even if yfinance volume data is spotty.
+    """
     df = df.copy()
-    spikes = df[df['Vol_ratio'] >= threshold].copy()
-    spikes['change'] = spikes['Close'] - spikes['Open']
-    spikes['change_pct'] = (spikes['change'] / spikes['Open']) * 100
+
+    # Compute price-based metrics
+    df['change'] = df['Close'] - df['Open']
+    df['change_pct'] = (df['change'] / df['Open']).abs() * 100
+    df['daily_range'] = df['High'] - df['Low']
+    df['range_vs_atr'] = df['daily_range'] / df['ATR_14'] if 'ATR_14' in df.columns else 1.0
+
+    # Trigger 1: Volume spike (original — volume > threshold x 20-day avg)
+    vol_mask = df['Vol_ratio'] >= threshold
+
+    # Trigger 2: Price-change spike (close-to-close move > 1.5x ATR)
+    if 'ATR_14' in df.columns:
+        price_chg_abs = (df['Close'] - df['Close'].shift(1)).abs()
+        price_mask = price_chg_abs > (df['ATR_14'] * 1.3)
+    else:
+        price_mask = df['change_pct'] > 1.5  # Fallback: >1.5% move
+
+    # Trigger 3: Intraday range spike (daily high-low range > 1.5x ATR)
+    if 'ATR_14' in df.columns:
+        range_mask = df['daily_range'] > (df['ATR_14'] * 1.5)
+    else:
+        range_mask = pd.Series(False, index=df.index)
+
+    # Combine: any trigger qualifies
+    combined_mask = vol_mask | price_mask | range_mask
+    spikes = df[combined_mask].copy()
+
+    # Tag the trigger reason
+    spikes['trigger'] = ''
+    spikes.loc[vol_mask & combined_mask, 'trigger'] += 'volume '
+    spikes.loc[price_mask & combined_mask, 'trigger'] += 'price-move '
+    spikes.loc[range_mask & combined_mask, 'trigger'] += 'range '
+    spikes['trigger'] = spikes['trigger'].str.strip()
+
     spikes['direction'] = spikes['change'].apply(lambda x: 'UP' if x >= 0 else 'DOWN')
     return spikes.sort_index(ascending=False)
 
@@ -3464,7 +3497,7 @@ def main():
                 <div>
                     <div style="font-size:14px;font-weight:700;color:#f0b90b;margin-bottom:4px;">Welcome to Gold Command</div>
                     <div style="font-size:11px;color:#8892ab;line-height:1.6;">
-                        Your AI-powered gold market intelligence terminal. Start with the <b style="color:#f0b90b;">Daily Brief</b> below for a quick summary,
+                        Your AI-powered gold market intelligence terminal. Start with the <b style="color:#f0b90b;">📋 Daily Brief</b> tab for a quick summary,
                         then explore <b style="color:#f0b90b;">Trade Signals</b> and <b style="color:#f0b90b;">Intelligence</b> tabs.
                         Hover any <span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;
                         background:rgba(240,185,11,0.12);color:#f0b90b;font-size:9px;font-weight:800;border:1px solid rgba(240,185,11,0.2);">?</span>
@@ -3517,22 +3550,6 @@ def main():
     regime_html = get_market_regime_html(gold_df, econ_events)
     st.markdown(regime_html, unsafe_allow_html=True)
 
-    brief_date = datetime.utcnow().strftime('%B %d, %Y')
-    brief_card_html = (
-        f'<div class="daily-brief">'
-        f'<div class="daily-brief-header">'
-        f'<div class="daily-brief-title">'
-        f'<span style="font-size:16px;">&#9889;</span> Daily Brief '
-        f'<span style="font-size:9px;color:#6b7a99;font-weight:400;letter-spacing:0.5px;">'
-        f'{brief_date} &middot; Auto-generated from live data</span>'
-        f'</div>'
-        f'<span class="brief-bias-badge" style="background:{brief_bias_bg};color:{brief_bias_color};border:1px solid {brief_bias_color}33;">'
-        f'{brief_bias}</span>'
-        f'</div>'
-        f'<div class="daily-brief-body">{brief_text}</div>'
-        f'</div>'
-    )
-    st.markdown(brief_card_html, unsafe_allow_html=True)
 
     # ══════════════════════════════════════════════════
     # TOP KPI ROW — Custom HTML Cards
@@ -3601,9 +3618,249 @@ def main():
     # ══════════════════════════════════════════════════
     # TAB NAVIGATION
     # ══════════════════════════════════════════════════
-    tab_dashboard, tab_signals, tab_intel, tab_news, tab_smc, tab_backtest = st.tabs([
-        "📊 Dashboard", "🎯 Trade Signals", "🧠 Intelligence", "📰 News & Events", "🔲 SMC Engine", "📈 Backtest"
+    tab_brief, tab_dashboard, tab_signals, tab_intel, tab_news, tab_smc, tab_backtest = st.tabs([
+        "📋 Daily Brief", "📊 Dashboard", "🎯 Trade Signals", "🧠 Intelligence", "📰 News & Events", "🔲 SMC Engine", "📈 Backtest"
     ])
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # TAB — DAILY BRIEF
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    with tab_brief:
+        brief_daily, brief_weekly, brief_monthly = st.tabs(["Daily", "This Week", "This Month"])
+
+        with brief_daily:
+            brief_date = datetime.utcnow().strftime('%B %d, %Y')
+            st.markdown(
+                f'<div class="daily-brief">'
+                f'<div class="daily-brief-header">'
+                f'<div class="daily-brief-title">'
+                f'<span style="font-size:16px;">&#9889;</span> Daily Brief '
+                f'<span style="font-size:9px;color:#6b7a99;font-weight:400;letter-spacing:0.5px;">'
+                f'{brief_date} &middot; Auto-generated from live data</span>'
+                f'</div>'
+                f'<span class="brief-bias-badge" style="background:{brief_bias_bg};color:{brief_bias_color};border:1px solid {brief_bias_color}33;">'
+                f'{brief_bias}</span>'
+                f'</div>'
+                f'<div class="daily-brief-body">{brief_text}</div>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+
+            # 3-Tier Analysis inside Daily Brief
+            st.markdown("""<div class="section-header" style="--section-accent: #a855f7; margin-top: 16px;">
+                <span class="section-title">Market Analysis</span>
+                <span class="pill pill-model">3-TIER</span>
+            </div>""", unsafe_allow_html=True)
+
+            tier_brief = st.radio("Perspective", ["Beginner", "Intermediate", "Pro"], horizontal=True, label_visibility="collapsed", key="brief_tier")
+
+            if tier_brief == "Beginner":
+                st.markdown(f'<div class="tier-tab tier-beginner"><div class="tier-label" style="color:#3b82f6;">Beginner View</div>{beginner}</div>', unsafe_allow_html=True)
+            elif tier_brief == "Intermediate":
+                st.markdown(f'<div class="tier-tab tier-intermediate"><div class="tier-label" style="color:#f59e0b;">Intermediate View</div>{intermediate}</div>', unsafe_allow_html=True)
+            else:
+                st.markdown(f'<div class="tier-tab tier-pro"><div class="tier-label" style="color:#a855f7;">Pro View</div>{pro}</div>', unsafe_allow_html=True)
+
+            # Pivot levels
+            st.markdown(f"""<div class="intel-card" style="margin-top:16px;">
+                <h3>Pivot Levels <span class="pill pill-data">FIBONACCI</span></h3>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center;">
+                    <div><div style="font-size:9px;color:#6b7a99;">R2</div><div style="font-size:13px;color:#ef4444;font-weight:600;">${pivots['R2']:,.0f}</div></div>
+                    <div><div style="font-size:9px;color:#6b7a99;">R1</div><div style="font-size:13px;color:#ef4444;font-weight:600;">${pivots['R1']:,.0f}</div></div>
+                    <div><div style="font-size:9px;color:#6b7a99;">Pivot</div><div style="font-size:13px;color:#f0b90b;font-weight:700;">${pivots['PP']:,.0f}</div></div>
+                    <div><div style="font-size:9px;color:#6b7a99;">S1</div><div style="font-size:13px;color:#10b981;font-weight:600;">${pivots['S1']:,.0f}</div></div>
+                    <div><div style="font-size:9px;color:#6b7a99;">S2</div><div style="font-size:13px;color:#10b981;font-weight:600;">${pivots['S2']:,.0f}</div></div>
+                    <div><div style="font-size:9px;color:#6b7a99;">S3</div><div style="font-size:13px;color:#10b981;font-weight:600;">${pivots['S3']:,.0f}</div></div>
+                </div>
+            </div>""", unsafe_allow_html=True)
+
+        with brief_weekly:
+            # Weekly brief — use weekly timeframe data
+            week_start = (datetime.utcnow() - timedelta(days=datetime.utcnow().weekday())).strftime('%b %d')
+            week_end = datetime.utcnow().strftime('%b %d, %Y')
+
+            # Weekly stats from gold_df
+            week_mask = gold_df.index >= (pd.Timestamp.now(tz='UTC') - pd.Timedelta(days=7))
+            week_df = gold_df[week_mask]
+            if len(week_df) >= 2:
+                week_open = week_df['Open'].iloc[0]
+                week_close = week_df['Close'].iloc[-1]
+                week_high = week_df['High'].max()
+                week_low = week_df['Low'].min()
+                week_chg = week_close - week_open
+                week_pct = (week_chg / week_open) * 100
+                week_range = week_high - week_low
+                week_dir = "up" if week_chg >= 0 else "down"
+                week_color = "#10b981" if week_chg >= 0 else "#ef4444"
+                week_avg_vol = week_df['Volume'].mean() if 'Volume' in week_df.columns else 0
+
+                # Weekly volume spikes
+                week_spikes = [s for s in spikes_correlated if s['date'] >= (datetime.utcnow() - timedelta(days=7)).date()] if spikes_correlated else []
+
+                # Weekly driver summary
+                bull_d = sum(1 for d in drivers if d[2] == "BULLISH")
+                bear_d = sum(1 for d in drivers if d[2] == "BEARISH")
+                week_bias = "BULLISH" if bull_d > bear_d + 1 else "BEARISH" if bear_d > bull_d + 1 else "NEUTRAL"
+                wb_color = "#10b981" if week_bias == "BULLISH" else "#ef4444" if week_bias == "BEARISH" else "#f59e0b"
+                wb_bg = f"rgba({16 if week_bias=='BULLISH' else 239 if week_bias=='BEARISH' else 245},{185 if week_bias=='BULLISH' else 68 if week_bias=='BEARISH' else 158},{129 if week_bias=='BULLISH' else 68 if week_bias=='BEARISH' else 11},0.12)"
+
+                st.markdown(
+                    f'<div class="daily-brief">'
+                    f'<div class="daily-brief-header">'
+                    f'<div class="daily-brief-title">'
+                    f'<span style="font-size:16px;">&#128197;</span> Weekly Brief '
+                    f'<span style="font-size:9px;color:#6b7a99;font-weight:400;letter-spacing:0.5px;">'
+                    f'{week_start} — {week_end}</span>'
+                    f'</div>'
+                    f'<span class="brief-bias-badge" style="background:{wb_bg};color:{wb_color};border:1px solid {wb_color}33;">'
+                    f'{week_bias}</span>'
+                    f'</div>'
+                    f'<div class="daily-brief-body">'
+                    f'<p>Gold moved <span style="color:{week_color};font-weight:700;">{week_dir} ${abs(week_chg):,.2f} ({week_pct:+.2f}%)</span> this week, '
+                    f'trading in a <b>${week_range:,.0f}</b> range from ${week_low:,.0f} to ${week_high:,.0f}.</p>'
+                    f'<p style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0;">'
+                    f'<span style="text-align:center;background:rgba(240,185,11,0.06);border-radius:6px;padding:8px;">'
+                    f'<span style="font-size:9px;color:#6b7a99;display:block;">Open</span>'
+                    f'<span style="font-size:14px;font-weight:700;color:#e2e8f0;">${week_open:,.0f}</span></span>'
+                    f'<span style="text-align:center;background:rgba(16,185,129,0.06);border-radius:6px;padding:8px;">'
+                    f'<span style="font-size:9px;color:#6b7a99;display:block;">High</span>'
+                    f'<span style="font-size:14px;font-weight:700;color:#10b981;">${week_high:,.0f}</span></span>'
+                    f'<span style="text-align:center;background:rgba(239,68,68,0.06);border-radius:6px;padding:8px;">'
+                    f'<span style="font-size:9px;color:#6b7a99;display:block;">Low</span>'
+                    f'<span style="font-size:14px;font-weight:700;color:#ef4444;">${week_low:,.0f}</span></span>'
+                    f'<span style="text-align:center;background:rgba(240,185,11,0.06);border-radius:6px;padding:8px;">'
+                    f'<span style="font-size:9px;color:#6b7a99;display:block;">Close</span>'
+                    f'<span style="font-size:14px;font-weight:700;color:#e2e8f0;">${week_close:,.0f}</span></span>'
+                    f'</p>'
+                    f'<p>Macro bias is <b style="color:{wb_color};">{week_bias.lower()}</b> ({bull_d} bullish / {bear_d} bearish drivers). '
+                    f'{"Volume spikes detected on " + str(len(week_spikes)) + " session(s) — institutional activity likely." if week_spikes else "No significant volume spikes this week."}</p>'
+                    f'<p>RSI at <b>{rsi_val:.1f}</b> · ATR <b>${gold_df["ATR_14"].iloc[-1]:,.0f}</b> · '
+                    f'Fear & Greed <b style="color:{fear_greed["color"] if fear_greed else "#f59e0b"};">{fear_greed["score"]:.0f}/100</b> ({fear_greed["label"] if fear_greed else "N/A"})</p>'
+                    f'</div></div>',
+                    unsafe_allow_html=True
+                )
+
+                # Weekly volume spikes table
+                if week_spikes:
+                    st.markdown("""<div class="section-header" style="--section-accent: #a855f7; margin-top: 16px;">
+                        <span class="section-title">Volume Spikes This Week</span>
+                    </div>""", unsafe_allow_html=True)
+                    for s in week_spikes[:5]:
+                        s_color = "#10b981" if s['direction'] == 'UP' else "#ef4444"
+                        trigger_tag = f" · <span style='color:#a855f7;'>{s.get('trigger', 'volume')}</span>" if s.get('trigger') else ""
+                        st.markdown(
+                            f'<div style="background:rgba(15,20,40,0.6);border:1px solid rgba(26,34,64,0.5);border-radius:8px;padding:10px 14px;margin-bottom:6px;">'
+                            f'<span style="color:#8892ab;font-size:11px;">{s["date"]}</span> · '
+                            f'<span style="color:{s_color};font-weight:700;">{s["direction"]}</span> '
+                            f'<span style="color:#e2e8f0;">${abs(s["change"]):,.0f} ({s["change_pct"]:.1f}%)</span>'
+                            f'{trigger_tag}'
+                            f'<span style="float:right;color:#6b7a99;font-size:10px;">{s["vol_ratio"]:.1f}x vol</span>'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
+            else:
+                st.info("Not enough weekly data available yet.")
+
+        with brief_monthly:
+            # Monthly brief — use ~30 days of data
+            month_name = datetime.utcnow().strftime('%B %Y')
+
+            month_mask = gold_df.index >= (pd.Timestamp.now(tz='UTC') - pd.Timedelta(days=30))
+            month_df = gold_df[month_mask]
+            if len(month_df) >= 5:
+                month_open = month_df['Open'].iloc[0]
+                month_close = month_df['Close'].iloc[-1]
+                month_high = month_df['High'].max()
+                month_low = month_df['Low'].min()
+                month_chg = month_close - month_open
+                month_pct = (month_chg / month_open) * 100
+                month_range = month_high - month_low
+                month_dir = "up" if month_chg >= 0 else "down"
+                month_color = "#10b981" if month_chg >= 0 else "#ef4444"
+
+                # Monthly spikes
+                month_spikes = [s for s in spikes_correlated if s['date'] >= (datetime.utcnow() - timedelta(days=30)).date()] if spikes_correlated else []
+
+                # COT positioning summary for monthly
+                cot_text = ""
+                if cot_data and cot_data.get('latest'):
+                    lat = cot_data['latest']
+                    net_mm = lat.get('net_managed_money', 0)
+                    cot_bias = "net long" if net_mm > 0 else "net short"
+                    cot_text = f'Managed money is <b>{cot_bias}</b> ({net_mm:+,.0f} contracts). '
+
+                # ETF flows summary
+                etf_text = ""
+                if etf_flows:
+                    for etf in etf_flows:
+                        if etf['symbol'] == 'GLD':
+                            etf_text = f'GLD flows: <b>{etf["flow_label"]}</b> (${etf["dollar_volume"]/1e6:,.0f}M). '
+                            break
+
+                mb_color = month_color
+                mb_bg = f"rgba({16 if month_chg >= 0 else 239},{185 if month_chg >= 0 else 68},{129 if month_chg >= 0 else 68},0.12)"
+                mb_label = "BULLISH" if month_pct > 2 else "BEARISH" if month_pct < -2 else "NEUTRAL"
+
+                st.markdown(
+                    f'<div class="daily-brief">'
+                    f'<div class="daily-brief-header">'
+                    f'<div class="daily-brief-title">'
+                    f'<span style="font-size:16px;">&#128200;</span> Monthly Brief '
+                    f'<span style="font-size:9px;color:#6b7a99;font-weight:400;letter-spacing:0.5px;">'
+                    f'{month_name}</span>'
+                    f'</div>'
+                    f'<span class="brief-bias-badge" style="background:{mb_bg};color:{mb_color};border:1px solid {mb_color}33;">'
+                    f'{mb_label}</span>'
+                    f'</div>'
+                    f'<div class="daily-brief-body">'
+                    f'<p>Gold has moved <span style="color:{month_color};font-weight:700;">{month_dir} ${abs(month_chg):,.2f} ({month_pct:+.2f}%)</span> over the past 30 days, '
+                    f'with a total range of <b>${month_range:,.0f}</b> (${month_low:,.0f} — ${month_high:,.0f}).</p>'
+                    f'<p style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0;">'
+                    f'<span style="text-align:center;background:rgba(240,185,11,0.06);border-radius:6px;padding:8px;">'
+                    f'<span style="font-size:9px;color:#6b7a99;display:block;">Month Open</span>'
+                    f'<span style="font-size:14px;font-weight:700;color:#e2e8f0;">${month_open:,.0f}</span></span>'
+                    f'<span style="text-align:center;background:rgba(16,185,129,0.06);border-radius:6px;padding:8px;">'
+                    f'<span style="font-size:9px;color:#6b7a99;display:block;">Month High</span>'
+                    f'<span style="font-size:14px;font-weight:700;color:#10b981;">${month_high:,.0f}</span></span>'
+                    f'<span style="text-align:center;background:rgba(239,68,68,0.06);border-radius:6px;padding:8px;">'
+                    f'<span style="font-size:9px;color:#6b7a99;display:block;">Month Low</span>'
+                    f'<span style="font-size:14px;font-weight:700;color:#ef4444;">${month_low:,.0f}</span></span>'
+                    f'<span style="text-align:center;background:rgba(240,185,11,0.06);border-radius:6px;padding:8px;">'
+                    f'<span style="font-size:9px;color:#6b7a99;display:block;">Current</span>'
+                    f'<span style="font-size:14px;font-weight:700;color:#e2e8f0;">${month_close:,.0f}</span></span>'
+                    f'</p>'
+                    f'<p>{cot_text}{etf_text}</p>'
+                    f'<p>{len(month_spikes)} volume spike(s) in the past 30 days. '
+                    f'Fear & Greed at <b style="color:{fear_greed["color"] if fear_greed else "#f59e0b"};">{fear_greed["score"]:.0f}/100</b> ({fear_greed["label"] if fear_greed else "N/A"}).</p>'
+                    f'</div></div>',
+                    unsafe_allow_html=True
+                )
+
+                # Monthly spikes list
+                if month_spikes:
+                    st.markdown("""<div class="section-header" style="--section-accent: #a855f7; margin-top: 16px;">
+                        <span class="section-title">Volume Spikes (30 Days)</span>
+                    </div>""", unsafe_allow_html=True)
+                    for s in month_spikes[:10]:
+                        s_color = "#10b981" if s['direction'] == 'UP' else "#ef4444"
+                        trigger_tag = f" · <span style='color:#a855f7;'>{s.get('trigger', 'volume')}</span>" if s.get('trigger') else ""
+                        news_tags = ""
+                        if s.get('news'):
+                            news_tags = " · ".join([f"<span style='color:#94a3b8;font-size:9px;'>{n['title'][:40]}...</span>" for n in s['news'][:2]])
+                            news_tags = f"<div style='margin-top:4px;'>{news_tags}</div>"
+                        st.markdown(
+                            f'<div style="background:rgba(15,20,40,0.6);border:1px solid rgba(26,34,64,0.5);border-radius:8px;padding:10px 14px;margin-bottom:6px;">'
+                            f'<span style="color:#8892ab;font-size:11px;">{s["date"]}</span> · '
+                            f'<span style="color:{s_color};font-weight:700;">{s["direction"]}</span> '
+                            f'<span style="color:#e2e8f0;">${abs(s["change"]):,.0f} ({s["change_pct"]:.1f}%)</span>'
+                            f'{trigger_tag}'
+                            f'<span style="float:right;color:#6b7a99;font-size:10px;">{s["vol_ratio"]:.1f}x vol</span>'
+                            f'{news_tags}'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
+            else:
+                st.info("Not enough monthly data available yet.")
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # TAB 1 — DASHBOARD
@@ -3945,23 +4202,7 @@ def main():
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     with tab_intel:
 
-        col_analysis, col_drivers, col_data = st.columns([2, 1, 1])
-
-        with col_analysis:
-            # ── 3-TIER ANALYSIS ──
-            st.markdown("""<div class="section-header" style="--section-accent: #a855f7;">
-                <span class="section-title">Analysis</span>
-                <span class="pill pill-model">3-TIER</span>
-            </div>""", unsafe_allow_html=True)
-
-            tier = st.radio("Perspective", ["Beginner", "Intermediate", "Pro"], horizontal=True, label_visibility="collapsed")
-
-            if tier == "Beginner":
-                st.markdown(f'<div class="tier-tab tier-beginner"><div class="tier-label" style="color:#3b82f6;">Beginner View</div>{beginner}</div>', unsafe_allow_html=True)
-            elif tier == "Intermediate":
-                st.markdown(f'<div class="tier-tab tier-intermediate"><div class="tier-label" style="color:#f59e0b;">Intermediate View</div>{intermediate}</div>', unsafe_allow_html=True)
-            else:
-                st.markdown(f'<div class="tier-tab tier-pro"><div class="tier-label" style="color:#a855f7;">Pro View</div>{pro}</div>', unsafe_allow_html=True)
+        col_drivers, col_data = st.columns([1, 1])
 
         with col_drivers:
             # ── MACRO DRIVERS ──
