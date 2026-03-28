@@ -415,6 +415,95 @@ header {visibility: hidden;}
 .icon-trend-up svg { animation: pulse-icon 2s ease-in-out infinite; }
 .icon-trend-down svg { animation: pulse-icon 2s ease-in-out infinite; }
 
+/* ═══ Session Clock Bar ═══ */
+.session-clock {
+    background: linear-gradient(135deg, #0a0f1e 0%, #111829 100%);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    padding: 14px 20px;
+    margin-bottom: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.session-clock-times {
+    display: flex; gap: 20px; align-items: center;
+}
+.session-clock-zone {
+    text-align: center;
+}
+.session-clock-zone .tz-label {
+    font-size: 8px; color: #5a6a8a; text-transform: uppercase;
+    letter-spacing: 1px; font-weight: 700;
+}
+.session-clock-zone .tz-time {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px; color: #e2e8f0; font-weight: 600;
+}
+.session-badges {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+}
+.session-badge {
+    font-size: 9px; font-weight: 700; padding: 3px 10px;
+    border-radius: 12px; letter-spacing: 0.6px;
+    text-transform: uppercase;
+}
+.session-badge.active {
+    background: rgba(16,185,129,0.15); color: #10b981;
+    border: 1px solid rgba(16,185,129,0.3);
+}
+.session-badge.inactive {
+    background: rgba(90,106,138,0.1); color: #4a5568;
+    border: 1px solid rgba(90,106,138,0.15);
+}
+.session-badge.overlap {
+    background: rgba(240,185,11,0.15); color: #f0b90b;
+    border: 1px solid rgba(240,185,11,0.3);
+    animation: pulse-glow 2s ease-in-out infinite;
+}
+@keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(240,185,11,0); }
+    50% { box-shadow: 0 0 8px 2px rgba(240,185,11,0.15); }
+}
+@media (max-width: 768px) {
+    .session-clock { flex-direction: column; align-items: flex-start; padding: 12px 14px; }
+    .session-clock-times { gap: 14px; }
+}
+
+/* ═══ Macro Driver Cards ═══ */
+.driver-grid {
+    display: flex; gap: 8px; flex-wrap: wrap;
+    margin: 14px 0 6px;
+}
+.driver-card {
+    flex: 1; min-width: 120px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 8px;
+    padding: 10px 12px;
+    text-align: center;
+}
+.driver-card .dc-name {
+    font-size: 8px; color: #5a6a8a; text-transform: uppercase;
+    letter-spacing: 0.8px; font-weight: 700; margin-bottom: 4px;
+}
+.driver-card .dc-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px; font-weight: 700; color: #e2e8f0;
+}
+.driver-card .dc-change {
+    font-size: 10px; font-weight: 600; margin-top: 2px;
+}
+.driver-card.bullish { border-left: 2px solid #10b981; }
+.driver-card.bearish { border-left: 2px solid #ef4444; }
+.driver-card.neutral { border-left: 2px solid #5a6a8a; }
+@media (max-width: 768px) {
+    .driver-grid { gap: 6px; }
+    .driver-card { min-width: 90px; padding: 8px 10px; }
+}
+
 /* ═══ Daily Brief Card ═══ */
 .daily-brief {
     background: linear-gradient(135deg, #0d1326 0%, #131b38 50%, #0f1730 100%);
@@ -1150,9 +1239,10 @@ def compute_pivot_levels(df):
     """Compute Fibonacci pivot points from previous day data."""
     if len(df) < 2:
         return {'PP': 0, 'R1': 0, 'R2': 0, 'R3': 0, 'S1': 0, 'S2': 0, 'S3': 0}
-    last = df.iloc[-1]
-    pp = (last['High'] + last['Low'] + last['Close']) / 3
-    r = last['High'] - last['Low']  # Previous range
+    # Use the PREVIOUS completed day, not today's partial candle
+    prev = df.iloc[-2]
+    pp = (prev['High'] + prev['Low'] + prev['Close']) / 3
+    r = prev['High'] - prev['Low']  # Previous day's range
     r1 = pp + 0.382 * r
     r2 = pp + 0.618 * r
     r3 = pp + 1.000 * r
@@ -1466,6 +1556,65 @@ def get_instrument_icon(name):
     return icons.get(name, icons.get(_aliases.get(name, ''), ''))
 
 
+def get_session_clock_html():
+    """Generate a session clock bar showing active forex sessions, overlaps, and multi-timezone clocks."""
+    from datetime import timezone, timedelta
+    now_utc = datetime.now(timezone.utc)
+    h = now_utc.hour
+
+    # Timezone clocks
+    utc_str = now_utc.strftime('%H:%M')
+    est = now_utc + timedelta(hours=-5)  # US Eastern (ET) — approximate
+    gst = now_utc + timedelta(hours=4)   # Gulf Standard Time (Dubai)
+    ist = now_utc + timedelta(hours=5, minutes=30)  # India Standard Time
+    est_str = est.strftime('%H:%M')
+    gst_str = gst.strftime('%H:%M')
+    ist_str = ist.strftime('%H:%M')
+
+    # Session windows (UTC hours)
+    # Asia/Tokyo: 00:00–09:00 UTC
+    # London:     07:00–16:00 UTC
+    # New York:   12:00–21:00 UTC
+    asia_active = 0 <= h < 9
+    london_active = 7 <= h < 16
+    ny_active = 12 <= h < 21
+
+    # Overlaps
+    asia_london_overlap = asia_active and london_active   # 07:00–09:00 UTC
+    london_ny_overlap = london_active and ny_active       # 12:00–16:00 UTC
+
+    # Build session badges
+    badges = []
+    if asia_london_overlap:
+        badges.append('<span class="session-badge overlap">Asia–London Overlap</span>')
+    elif london_ny_overlap:
+        badges.append('<span class="session-badge overlap">London–NY Overlap</span>')
+
+    for name, active in [("Tokyo", asia_active), ("London", london_active), ("New York", ny_active)]:
+        cls = "active" if active else "inactive"
+        dot = "●" if active else "○"
+        badges.append(f'<span class="session-badge {cls}">{dot} {name}</span>')
+
+    # Weekend / market closed check
+    weekday = now_utc.weekday()
+    if weekday >= 5:  # Saturday=5, Sunday=6
+        badges = ['<span class="session-badge inactive">Market Closed — Weekend</span>']
+
+    badges_html = "".join(badges)
+
+    return (
+        f'<div class="session-clock">'
+        f'<div class="session-clock-times">'
+        f'<div class="session-clock-zone"><div class="tz-label">UTC</div><div class="tz-time">{utc_str}</div></div>'
+        f'<div class="session-clock-zone"><div class="tz-label">US Eastern</div><div class="tz-time">{est_str}</div></div>'
+        f'<div class="session-clock-zone"><div class="tz-label">GST (Dubai)</div><div class="tz-time">{gst_str}</div></div>'
+        f'<div class="session-clock-zone"><div class="tz-label">IST (India)</div><div class="tz-time">{ist_str}</div></div>'
+        f'</div>'
+        f'<div class="session-badges">{badges_html}</div>'
+        f'</div>'
+    )
+
+
 def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, trade_signals, signal_trend, ranges, pivots, key_levels):
     """Generate a plain-English daily brief summary for the top of the dashboard."""
     # Direction
@@ -1491,7 +1640,23 @@ def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, 
         bias_bg = "rgba(245,158,11,0.12)"
         bias_word = "mixed"
 
-    # Key driver (most impactful)
+    # Build macro driver cards HTML
+    driver_cards_html = '<div class="driver-grid">'
+    for d in drivers:
+        name, detail, impact = d[0], d[1], d[2]
+        why = d[3] if len(d) > 3 else ""
+        card_class = "bullish" if impact == "BULLISH" else "bearish" if impact == "BEARISH" else "neutral"
+        chg_color = "#10b981" if impact == "BULLISH" else "#ef4444" if impact == "BEARISH" else "#5a6a8a"
+        driver_cards_html += (
+            f'<div class="driver-card {card_class}">'
+            f'<div class="dc-name">{name}</div>'
+            f'<div class="dc-value">{detail}</div>'
+            f'<div class="dc-change" style="color:{chg_color};">{impact}</div>'
+            f'</div>'
+        )
+    driver_cards_html += '</div>'
+
+    # Inline driver summary for the text paragraph
     key_drivers_text = []
     for d in drivers:
         name, detail, impact = d[0], d[1], d[2]
@@ -1525,19 +1690,24 @@ def generate_daily_brief_text(current, daily_chg, daily_pct, rsi, atr, drivers, 
     else:
         sig_text = "No active trade signals right now — the engine is scanning for setups at key levels."
 
-    # Key levels to watch
-    nearest_support = pivots['S1']
-    nearest_resistance = pivots['R1']
-    levels_text = (f'Key levels: support at <span class="highlight-up">${nearest_support:,.0f}</span>, '
-                  f'resistance at <span class="highlight-down">${nearest_resistance:,.0f}</span> (Fibonacci pivots).')
+    # Key levels to watch — show S1/S2 and R1/R2 for more useful context
+    s1, s2 = pivots['S1'], pivots['S2']
+    r1, r2 = pivots['R1'], pivots['R2']
+    pp = pivots['PP']
+    levels_text = (
+        f'Fibonacci Pivots — '
+        f'Pivot: <b>${pp:,.0f}</b> · '
+        f'Support: <span class="highlight-up">${s1:,.0f}</span> / <span class="highlight-up">${s2:,.0f}</span> · '
+        f'Resistance: <span class="highlight-down">${r1:,.0f}</span> / <span class="highlight-down">${r2:,.0f}</span>'
+    )
 
     # Compose the brief
     brief_html = (
         f'<p>Gold is trading at <b>${current:,.2f}</b>, '
         f'<span class="{dir_class}">{direction} ${abs(daily_chg):,.2f} ({daily_pct:+.2f}%)</span> on the session. '
-        f'The daily trend is <b>{signal_trend.replace("_", " ").lower()}</b> and macro conditions are <b>{bias_word}</b> — '
-        f'driven by {top_drivers}.</p>'
-        f'<p>{rsi_text}. {range_text}</p>'
+        f'The daily trend is <b>{signal_trend.replace("_", " ").lower()}</b> and macro conditions are <b>{bias_word}</b>.</p>'
+        f'{driver_cards_html}'
+        f'<p style="margin-top:12px;">{rsi_text}. {range_text}</p>'
         f'<p>{sig_text}</p>'
         f'<p>{levels_text}</p>'
     )
@@ -1807,6 +1977,10 @@ def main():
         gold_df['ATR_14'].iloc[-1], drivers, trade_signals,
         signal_trend, ranges, pivots, key_levels
     )
+
+    # Session Clock Bar — above the Daily Brief
+    session_clock_html = get_session_clock_html()
+    st.markdown(session_clock_html, unsafe_allow_html=True)
 
     brief_date = datetime.utcnow().strftime('%B %d, %Y')
     brief_card_html = (
