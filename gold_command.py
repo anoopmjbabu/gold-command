@@ -4249,8 +4249,9 @@ def main():
                 if '4h' in mtf_data:
                     from signal_engine import find_sr_levels
                     _sr = find_sr_levels(mtf_data['4h'], lookback=5, merge_threshold_pct=0.4)
-        except Exception:
-            pass
+        except Exception as e:
+            _logger = logging.getLogger("gold_command")
+            _logger.warning(f"Signal engine error: {e}")
         return _signals, _orb_signals, _trend, _sr, _mtf
 
     with st.spinner("Running signal engine..."):
