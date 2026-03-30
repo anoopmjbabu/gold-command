@@ -591,6 +591,358 @@ def generate_signals(mtf_data, max_signals=10):
     return signals
 
 
+# ═══════════════════════════════════════════════════════════════
+# SESSION OPEN RANGE BREAKOUT (ORB) STRATEGY
+# ═══════════════════════════════════════════════════════════════
+
+# Session open windows (UTC)
+_ORB_SESSIONS = {
+    'London': {'start_hour': 7, 'start_min': 0, 'end_hour': 7, 'end_min': 30},
+    'New York': {'start_hour': 13, 'start_min': 30, 'end_hour': 14, 'end_min': 0},
+}
+
+# How many 15m candles to scan after the range for a breakout (max ~4 hours)
+_ORB_SCAN_BARS = 16
+
+
+def detect_opening_ranges(m15_df):
+    """Identify London and NY opening ranges from 15-minute data.
+
+    Returns a list of dicts:
+        {session, date, range_high, range_low, range_size,
+         range_start_idx, range_end_idx, range_end_time}
+    """
+    ranges = []
+    if m15_df is None or len(m15_df) < 4:
+        return ranges
+
+    for session_name, window in _ORB_SESSIONS.items():
+        sh, sm = window['start_hour'], window['start_min']
+        eh, em = window['end_hour'], window['end_min']
+
+        # Group bars by calendar date
+        dates_seen = {}
+        for idx in range(len(m15_df)):
+            ts = m15_df.index[idx]
+            if not hasattr(ts, 'hour'):
+                continue
+            bar_date = ts.date() if hasattr(ts, 'date') else str(ts)[:10]
+            dates_seen.setdefault(bar_date, []).append(idx)
+
+        for bar_date, indices in dates_seen.items():
+            range_bars = []
+            for idx in indices:
+                ts = m15_df.index[idx]
+                t_minutes = ts.hour * 60 + ts.minute
+                start_minutes = sh * 60 + sm
+                end_minutes = eh * 60 + em
+                # 15m bar at 07:00 covers 07:00-07:15, bar at 07:15 covers 07:15-07:30
+                if start_minutes <= t_minutes < end_minutes:
+                    range_bars.append(idx)
+
+            if len(range_bars) < 2:
+                continue  # Need at least 2 candles for a valid range
+
+            range_high = m15_df['High'].iloc[range_bars].max()
+            range_low = m15_df['Low'].iloc[range_bars].min()
+            range_size = range_high - range_low
+
+            if range_size <= 0:
+                continue
+
+            ranges.append({
+                'session': session_name,
+                'date': bar_date,
+                'range_high': round(range_high, 2),
+                'range_low': round(range_low, 2),
+                'range_size': round(range_size, 2),
+                'range_start_idx': range_bars[0],
+                'range_end_idx': range_bars[-1],
+                'range_end_time': m15_df.index[range_bars[-1]],
+            })
+
+    return ranges
+
+
+def generate_orb_signals(mtf_data, max_signals=10):
+    """Generate Session Open Range Breakout signals.
+
+    Scans 15m data for London/NY opening ranges, then looks for
+    breakout candles that close beyond the range with volume confirmation.
+
+    Returns signals in the same format as generate_signals() with extra
+    ORB-specific fields (strategy, range_high, range_low, orb_session).
+    """
+    signals = []
+
+    entry_key = '15m' if '15m' in mtf_data else '1h'
+    if entry_key not in mtf_data:
+        return signals
+
+    m15_df = mtf_data[entry_key]
+
+    # Daily trend for alignment scoring
+    daily_trend = "NEUTRAL"
+    if 'daily' in mtf_data:
+        daily_trend, _, _ = detect_trend(mtf_data['daily'])
+
+    # S/R levels for confluence scoring
+    sr_levels = []
+    if '4h' in mtf_data:
+        sr_levels = find_sr_levels(mtf_data['4h'], lookback=5, merge_threshold_pct=0.4)
+
+    # ATR on 15m for range quality filter
+    atr_series = (m15_df['High'] - m15_df['Low']).rolling(14).mean()
+
+    # Detect opening ranges
+    opening_ranges = detect_opening_ranges(m15_df)
+
+    for orng in opening_ranges:
+        range_end_idx = orng['range_end_idx']
+        range_high = orng['range_high']
+        range_low = orng['range_low']
+        range_size = orng['range_size']
+
+        # Range quality filter: skip if range is too wide (> 1.5x ATR)
+        if range_end_idx < 14:
+            continue
+        atr_at_range = atr_series.iloc[range_end_idx]
+        if pd.isna(atr_at_range) or atr_at_range <= 0:
+            continue
+        if range_size > atr_at_range * 1.5:
+            continue  # Over-extended range — skip
+
+        # Scan candles after the range for a breakout
+        scan_start = range_end_idx + 1
+        scan_end = min(scan_start + _ORB_SCAN_BARS, len(m15_df))
+        breakout_found = False
+
+        for j in range(scan_start, scan_end):
+            bar = m15_df.iloc[j]
+            bar_time = m15_df.index[j]
+            bar_close = bar['Close']
+
+            # Determine breakout direction
+            direction = None
+            if bar_close > range_high:
+                direction = 'BUY'
+            elif bar_close < range_low:
+                direction = 'SELL'
+
+            if direction is None:
+                continue
+
+            # Only take the first breakout per session
+            if breakout_found:
+                break
+            breakout_found = True
+
+            # ── VOLUME FILTER ──
+            bar_vol = bar['Volume'] if 'Volume' in m15_df.columns else 0
+            avg_vol = m15_df['Volume'].iloc[max(0, j - 20):j].mean() if 'Volume' in m15_df.columns else 0
+            vol_ratio = (bar_vol / avg_vol) if avg_vol > 0 else 1.0
+            if vol_ratio < 1.2:
+                continue  # Weak volume on breakout — skip
+
+            # ── SCORE THE SIGNAL ──
+            score = 0
+            reasons = []
+
+            # 1. Breakout volume strength (0-25)
+            if vol_ratio >= 2.0:
+                score += 25
+                reasons.append("Strong breakout volume (2x+ avg)")
+            elif vol_ratio >= 1.5:
+                score += 18
+                reasons.append("Good breakout volume (1.5x+ avg)")
+            elif vol_ratio >= 1.2:
+                score += 10
+                reasons.append("Adequate breakout volume")
+
+            # 2. Daily trend alignment (0-25)
+            trend_aligned = False
+            if direction == 'BUY' and daily_trend in ['BULLISH', 'WEAK_BULLISH']:
+                score += 25
+                reasons.append(f"Aligned with daily uptrend")
+                trend_aligned = True
+            elif direction == 'SELL' and daily_trend in ['BEARISH', 'WEAK_BEARISH']:
+                score += 25
+                reasons.append(f"Aligned with daily downtrend")
+                trend_aligned = True
+            elif daily_trend == 'NEUTRAL':
+                score += 10
+                reasons.append("Neutral daily trend")
+
+            # 3. Range quality — tighter = better (0-20)
+            range_ratio = range_size / atr_at_range if atr_at_range > 0 else 1.0
+            if range_ratio <= 0.5:
+                score += 20
+                reasons.append("Tight opening range (high compression)")
+            elif range_ratio <= 0.8:
+                score += 15
+                reasons.append("Moderate opening range")
+            elif range_ratio <= 1.0:
+                score += 10
+                reasons.append("Normal opening range")
+            else:
+                score += 5
+
+            # 4. S/R confluence (0-15)
+            current_price = bar_close
+            nearby = find_nearby_levels(sr_levels, current_price, range_pct=1.0)
+            sr_confluence = False
+            for lv in nearby:
+                if direction == 'BUY' and lv['type'] == 'resistance' and bar_close > lv['price']:
+                    score += 15
+                    reasons.append(f"Broke above resistance at ${lv['price']:,.2f}")
+                    sr_confluence = True
+                    break
+                elif direction == 'SELL' and lv['type'] == 'support' and bar_close < lv['price']:
+                    score += 15
+                    reasons.append(f"Broke below support at ${lv['price']:,.2f}")
+                    sr_confluence = True
+                    break
+            if not sr_confluence and nearby:
+                score += 5
+                reasons.append("Near key level")
+
+            # 5. Session bonus (0-15)
+            if orng['session'] == 'London':
+                bar_hour = bar_time.hour if hasattr(bar_time, 'hour') else 0
+                if 12 <= bar_hour < 17:
+                    score += 15
+                    reasons.append("London/NY overlap session")
+                else:
+                    score += 10
+                    reasons.append("London session breakout")
+            elif orng['session'] == 'New York':
+                score += 10
+                reasons.append("New York session breakout")
+
+            # Minimum threshold
+            if score < 50:
+                continue
+
+            # ── RISK MANAGEMENT ──
+            entry = round(bar_close, 2)
+            if direction == 'BUY':
+                stop_loss = round(range_low, 2)
+                risk = round(entry - stop_loss, 2)
+                if risk <= 0:
+                    continue
+                take_profit = round(entry + risk * 2, 2)  # 1:2 RR
+                reward = round(take_profit - entry, 2)
+            else:
+                stop_loss = round(range_high, 2)
+                risk = round(stop_loss - entry, 2)
+                if risk <= 0:
+                    continue
+                take_profit = round(entry - risk * 2, 2)  # 1:2 RR
+                reward = round(entry - take_profit, 2)
+
+            rr_ratio = round(reward / risk, 1) if risk > 0 else 0
+
+            # Confidence label
+            if score >= 80:
+                confidence = "HIGH"
+            elif score >= 65:
+                confidence = "MEDIUM"
+            else:
+                confidence = "LOW"
+
+            signal = {
+                'time': bar_time,
+                'direction': direction,
+                'pattern': 'orb_breakout',
+                'pattern_name': f"ORB {orng['session']}",
+                'price_at_signal': entry,
+                'level_price': range_high if direction == 'BUY' else range_low,
+                'level_type': 'resistance' if direction == 'BUY' else 'support',
+                'level_touches': 0,
+                'entry': entry,
+                'stop_loss': stop_loss,
+                'take_profit': take_profit,
+                'risk': risk,
+                'reward': reward,
+                'rr_ratio': rr_ratio,
+                'score': min(score, 100),
+                'confidence': confidence,
+                'daily_trend': daily_trend,
+                'trend_aligned': trend_aligned,
+                'volume_confirmed': vol_ratio >= 1.5,
+                'reasons': reasons,
+                'timeframe': entry_key,
+                'session': _get_session_label(bar_time),
+                # ORB-specific fields
+                'strategy': 'ORB',
+                'range_high': range_high,
+                'range_low': range_low,
+                'range_size': range_size,
+                'orb_session': orng['session'],
+            }
+            signals.append(signal)
+
+    # Sort by score descending, return top N
+    signals.sort(key=lambda x: x['score'], reverse=True)
+
+    # Deduplicate: one signal per session per day
+    seen = set()
+    unique = []
+    for s in signals:
+        key = f"{s.get('orb_session', '')}_{s['time'].strftime('%Y-%m-%d') if hasattr(s['time'], 'strftime') else str(s['time'])[:10]}"
+        if key not in seen:
+            seen.add(key)
+            unique.append(s)
+    return unique[:max_signals]
+
+
+def format_orb_signal_for_beginner(signal):
+    """Format an ORB signal into plain English for a beginner."""
+    direction = signal['direction']
+    orb_session = signal.get('orb_session', signal.get('session', ''))
+
+    if direction == 'BUY':
+        action = "Consider BUYING"
+        emoji = "🟢"
+        sl_text = f"If it drops below ${signal['stop_loss']:,.2f}, exit (your risk: ${signal['risk']:,.2f})"
+        tp_text = f"Target: ${signal['take_profit']:,.2f} (potential gain: ${signal['reward']:,.2f})"
+    else:
+        action = "Consider SELLING"
+        emoji = "🔴"
+        sl_text = f"If it rises above ${signal['stop_loss']:,.2f}, exit (your risk: ${signal['risk']:,.2f})"
+        tp_text = f"Target: ${signal['take_profit']:,.2f} (potential gain: ${signal['reward']:,.2f})"
+
+    range_high = signal.get('range_high', 0)
+    range_low = signal.get('range_low', 0)
+    breakout_word = "above" if direction == 'BUY' else "below"
+    level_word = f"${range_high:,.2f}" if direction == 'BUY' else f"${range_low:,.2f}"
+
+    explanation = (
+        f"Gold broke {breakout_word} the {orb_session} session opening range ({level_word}) "
+        f"on the {signal['timeframe']} chart. The range was ${range_low:,.2f}–${range_high:,.2f} "
+        f"(${signal.get('range_size', 0):,.2f} wide)."
+    )
+
+    if signal.get('trend_aligned'):
+        explanation += f" The daily trend is {signal['daily_trend'].lower().replace('_', ' ')}, supporting this breakout."
+
+    if signal.get('volume_confirmed'):
+        explanation += " Volume on the breakout candle is well above average, confirming momentum."
+
+    return {
+        'emoji': emoji,
+        'headline': f"{action} — {orb_session} ORB at ${signal['entry']:,.2f}",
+        'confidence': signal['confidence'],
+        'score': signal['score'],
+        'explanation': explanation,
+        'entry': f"${signal['entry']:,.2f}",
+        'sl': sl_text,
+        'tp': tp_text,
+        'rr': f"1:{signal['rr_ratio']}",
+        'reasons': signal['reasons'],
+    }
+
+
 def format_signal_for_beginner(signal):
     """Format a signal into plain English for a beginner."""
     if signal['direction'] == 'BUY':

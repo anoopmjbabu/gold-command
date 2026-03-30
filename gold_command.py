@@ -22,7 +22,7 @@ import os
 
 # Add current directory to path for signal_engine import
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from signal_engine import fetch_multi_timeframe, generate_signals, format_signal_for_beginner
+from signal_engine import fetch_multi_timeframe, generate_signals, format_signal_for_beginner, generate_orb_signals, format_orb_signal_for_beginner
 
 import logging
 logging.basicConfig(level=logging.WARNING)
@@ -1996,6 +1996,215 @@ def backtest_signals(mtf_data, lookback_bars=100, max_hold_bars=20):
                 'trend_aligned': trend_aligned,
                 'session': _get_session_label(bar_time) if hasattr(bar_time, 'hour') else 'Unknown',
             })
+
+    return results
+
+
+def backtest_orb_signals(mtf_data, lookback_bars=200, max_hold_bars=20):
+    """Backtest Session Open Range Breakout signals on historical data.
+
+    Same evaluation pattern as backtest_signals() — scans for opening ranges,
+    checks for breakout entries, and evaluates TP/SL outcomes.
+    """
+    from signal_engine import (detect_trend, find_sr_levels, find_nearby_levels,
+                               detect_opening_ranges, _get_session_label, _ORB_SCAN_BARS)
+
+    results = []
+
+    entry_key = '15m' if '15m' in mtf_data else '1h'
+    if entry_key not in mtf_data or 'daily' not in mtf_data:
+        return results
+
+    m15_df = mtf_data[entry_key]
+    daily_trend, _, _ = detect_trend(mtf_data['daily'])
+
+    sr_levels = []
+    if '4h' in mtf_data:
+        sr_levels_4h = find_sr_levels(mtf_data['4h'], lookback=3, merge_threshold_pct=0.5)
+        sr_levels_daily = find_sr_levels(mtf_data['daily'], lookback=3, merge_threshold_pct=0.5)
+        all_sr = sr_levels_4h + sr_levels_daily
+        all_sr.sort(key=lambda x: x['price'])
+        for lv in all_sr:
+            if not sr_levels or abs(lv['price'] - sr_levels[-1]['price']) / sr_levels[-1]['price'] > 0.003:
+                sr_levels.append(lv)
+            elif lv.get('touches', 1) > sr_levels[-1].get('touches', 1):
+                sr_levels[-1] = lv
+
+    atr_series = (m15_df['High'] - m15_df['Low']).rolling(14).mean()
+
+    opening_ranges = detect_opening_ranges(m15_df)
+
+    for orng in opening_ranges:
+        range_end_idx = orng['range_end_idx']
+        range_high = orng['range_high']
+        range_low = orng['range_low']
+        range_size = orng['range_size']
+
+        # Only backtest ranges within the lookback window and with room for evaluation
+        if range_end_idx < len(m15_df) - lookback_bars:
+            continue
+        if range_end_idx + max_hold_bars >= len(m15_df):
+            continue
+
+        # Range quality filter
+        if range_end_idx < 14:
+            continue
+        atr_val = atr_series.iloc[range_end_idx]
+        if pd.isna(atr_val) or atr_val <= 0:
+            continue
+        if range_size > atr_val * 1.5:
+            continue
+
+        # Scan for breakout
+        scan_start = range_end_idx + 1
+        scan_end = min(scan_start + _ORB_SCAN_BARS, len(m15_df) - max_hold_bars)
+
+        for j in range(scan_start, scan_end):
+            bar = m15_df.iloc[j]
+            bar_time = m15_df.index[j]
+            bar_close = bar['Close']
+
+            direction = None
+            if bar_close > range_high:
+                direction = 'LONG'
+            elif bar_close < range_low:
+                direction = 'SHORT'
+
+            if direction is None:
+                continue
+
+            # Volume filter
+            avg_vol = m15_df['Volume'].iloc[max(0, j - 20):j].mean() if 'Volume' in m15_df.columns else 0
+            bar_vol = bar['Volume'] if 'Volume' in m15_df.columns else 0
+            vol_ratio = (bar_vol / avg_vol) if avg_vol > 0 else 1.0
+            if vol_ratio < 1.2:
+                continue
+
+            # Compute levels
+            entry = bar_close
+            if direction == 'LONG':
+                sl = range_low
+                risk = entry - sl
+                tp1 = entry + risk * 1.0
+                tp2 = entry + risk * 2.0
+                tp3 = entry + risk * 3.0
+            else:
+                sl = range_high
+                risk = sl - entry
+                tp1 = entry - risk * 1.0
+                tp2 = entry - risk * 2.0
+                tp3 = entry - risk * 3.0
+
+            if risk <= 0:
+                continue
+
+            # Trend alignment
+            trend_aligned = (direction == 'LONG' and daily_trend in ['BULLISH', 'WEAK_BULLISH']) or \
+                           (direction == 'SHORT' and daily_trend in ['BEARISH', 'WEAK_BEARISH'])
+
+            # Score
+            score = 40
+            if trend_aligned:
+                score += 20
+            if vol_ratio >= 2.0:
+                score += 15
+            elif vol_ratio >= 1.5:
+                score += 10
+            range_ratio = range_size / atr_val if atr_val > 0 else 1
+            if range_ratio <= 0.5:
+                score += 10
+            nearby = find_nearby_levels(sr_levels, bar_close, range_pct=1.0)
+            if nearby:
+                score += 5
+            score = min(100, score)
+            confidence = 'HIGH' if score >= 75 else 'MEDIUM' if score >= 55 else 'LOW'
+
+            # ── EVALUATE OUTCOME ──
+            outcome = 'OPEN'
+            exit_price = None
+            exit_time = None
+            bars_held = 0
+            max_favorable = 0
+            max_adverse = 0
+
+            for k in range(j + 1, min(j + max_hold_bars + 1, len(m15_df))):
+                future_bar = m15_df.iloc[k]
+                bars_held = k - j
+
+                if direction == 'LONG':
+                    favorable = future_bar['High'] - entry
+                    adverse = entry - future_bar['Low']
+                    max_favorable = max(max_favorable, favorable)
+                    max_adverse = max(max_adverse, adverse)
+                    if future_bar['Low'] <= sl:
+                        outcome, exit_price, exit_time = 'SL', sl, m15_df.index[k]
+                        break
+                    if future_bar['High'] >= tp3:
+                        outcome, exit_price, exit_time = 'TP3', tp3, m15_df.index[k]
+                        break
+                    if future_bar['High'] >= tp2:
+                        outcome, exit_price, exit_time = 'TP2', tp2, m15_df.index[k]
+                        break
+                    if future_bar['High'] >= tp1:
+                        outcome, exit_price, exit_time = 'TP1', tp1, m15_df.index[k]
+                        break
+                else:
+                    favorable = entry - future_bar['Low']
+                    adverse = future_bar['High'] - entry
+                    max_favorable = max(max_favorable, favorable)
+                    max_adverse = max(max_adverse, adverse)
+                    if future_bar['High'] >= sl:
+                        outcome, exit_price, exit_time = 'SL', sl, m15_df.index[k]
+                        break
+                    if future_bar['Low'] <= tp3:
+                        outcome, exit_price, exit_time = 'TP3', tp3, m15_df.index[k]
+                        break
+                    if future_bar['Low'] <= tp2:
+                        outcome, exit_price, exit_time = 'TP2', tp2, m15_df.index[k]
+                        break
+                    if future_bar['Low'] <= tp1:
+                        outcome, exit_price, exit_time = 'TP1', tp1, m15_df.index[k]
+                        break
+
+            if outcome == 'OPEN':
+                outcome = 'EXPIRED'
+                exit_price = m15_df['Close'].iloc[min(j + max_hold_bars, len(m15_df) - 1)]
+                bars_held = max_hold_bars
+
+            pnl = (exit_price - entry) if direction == 'LONG' else (entry - exit_price)
+            pnl_r = pnl / risk if risk > 0 else 0
+
+            results.append({
+                'direction': direction,
+                'pattern': 'orb_breakout',
+                'pattern_bias': 'bullish' if direction == 'LONG' else 'bearish',
+                'level_type': 'resistance' if direction == 'LONG' else 'support',
+                'level_price': range_high if direction == 'LONG' else range_low,
+                'entry': entry,
+                'sl': sl,
+                'tp1': tp1,
+                'tp2': tp2,
+                'tp3': tp3,
+                'entry_time': bar_time,
+                'exit_time': exit_time,
+                'exit_price': exit_price,
+                'outcome': outcome,
+                'pnl': pnl,
+                'pnl_r': pnl_r,
+                'risk': risk,
+                'rr_ratio': 1.0,
+                'bars_held': bars_held,
+                'max_favorable': max_favorable,
+                'max_adverse': max_adverse,
+                'score': score,
+                'confidence': confidence,
+                'trend_aligned': trend_aligned,
+                'session': _get_session_label(bar_time) if hasattr(bar_time, 'hour') else 'Unknown',
+                'strategy': 'ORB',
+                'orb_session': orng['session'],
+            })
+
+            break  # Only first breakout per range
 
     return results
 
@@ -4027,11 +4236,13 @@ def main():
     # ── Signal Engine (cached — 5 min TTL) ──
     @st.cache_data(ttl=600)
     def _run_signal_engine():
-        _signals, _trend, _sr = [], "NEUTRAL", []
+        _signals, _orb_signals, _trend, _sr, _mtf = [], [], "NEUTRAL", [], None
         try:
             mtf_data = fetch_multi_timeframe(GOLD_TICKER)
+            _mtf = mtf_data
             if mtf_data:
                 _signals = generate_signals(mtf_data, max_signals=5)
+                _orb_signals = generate_orb_signals(mtf_data, max_signals=5)
                 if 'daily' in mtf_data:
                     from signal_engine import detect_trend
                     _trend, _, _ = detect_trend(mtf_data['daily'])
@@ -4040,10 +4251,10 @@ def main():
                     _sr = find_sr_levels(mtf_data['4h'], lookback=5, merge_threshold_pct=0.4)
         except Exception:
             pass
-        return _signals, _trend, _sr
+        return _signals, _orb_signals, _trend, _sr, _mtf
 
     with st.spinner("Running signal engine..."):
-        trade_signals, signal_trend, signal_sr_levels = _run_signal_engine()
+        trade_signals, orb_signals, signal_trend, signal_sr_levels, mtf_data_cache = _run_signal_engine()
 
     # ── Daily Key Levels + JSON export ──
     key_levels = compute_daily_key_levels(gold_df, corr_data, signal_sr_levels)
@@ -4721,9 +4932,102 @@ def main():
         else:
             st.markdown("""<div class="signal-empty">
                 <div style="font-size:24px;margin-bottom:8px;">&#9203;</div>
-                <div style="font-weight:600;color:#a8b2c8;margin-bottom:4px;">No Active Signals</div>
+                <div style="font-weight:600;color:#a8b2c8;margin-bottom:4px;">No Active Pattern Signals</div>
                 <div>No candle patterns detected at key support/resistance levels right now.<br>
                 The engine scans 15-minute bars at 4H-derived S/R zones aligned with the daily trend.</div>
+            </div>""", unsafe_allow_html=True)
+
+        # ── ORB (Session Open Range Breakout) Signals ──
+        st.markdown(f"""<div class="section-header" style="--section-accent: #3b82f6; margin-top:24px;">
+            <div>
+                <span class="section-title">Session Open Range Breakout</span>
+                <div style="display:flex;align-items:center;gap:10px;margin-top:6px;">
+                    <span style="font-size:9px;color:#5a6a8a;">London (07:00-07:30 UTC) &amp; New York (13:30-14:00 UTC) opening range breakouts</span>
+                </div>
+            </div>
+            <span class="pill pill-live" style="background:rgba(59,130,246,0.15);color:#60a5fa;">ORB ENGINE</span>
+        </div>""", unsafe_allow_html=True)
+
+        if orb_signals:
+            orb_cols = st.columns(min(len(orb_signals), 3))
+            for i, signal in enumerate(orb_signals[:6]):
+                formatted = format_orb_signal_for_beginner(signal)
+                col = orb_cols[i % min(len(orb_signals), 3)]
+
+                direction = signal['direction'].lower()
+                conf = signal.get('confidence', 'LOW')
+                conf_class = 'conf-high' if conf == 'HIGH' else 'conf-med' if conf == 'MEDIUM' else 'conf-low'
+                score = signal.get('score', 0)
+
+                if score >= 80:
+                    ring_bg, ring_border, ring_color = "rgba(16,185,129,0.15)", "#10b981", "#10b981"
+                elif score >= 65:
+                    ring_bg, ring_border, ring_color = "rgba(245,158,11,0.15)", "#f59e0b", "#f59e0b"
+                else:
+                    ring_bg, ring_border, ring_color = "rgba(107,122,153,0.15)", "#6b7a99", "#6b7a99"
+
+                reasons_html = ""
+                for reason in formatted.get('reasons', []):
+                    reasons_html += f'<span class="signal-reason-tag">{reason}</span>'
+
+                range_html = f"""<div style="display:flex;gap:12px;margin:6px 0;padding:6px 10px;background:rgba(59,130,246,0.06);border-radius:6px;border:1px solid rgba(59,130,246,0.12);">
+                    <div style="text-align:center;">
+                        <div style="font-size:8px;color:#60a5fa;text-transform:uppercase;font-weight:600;">Range High</div>
+                        <div style="font-size:11px;color:#e8ecf4;font-weight:600;">${signal['range_high']:,.2f}</div>
+                    </div>
+                    <div style="text-align:center;">
+                        <div style="font-size:8px;color:#60a5fa;text-transform:uppercase;font-weight:600;">Range Low</div>
+                        <div style="font-size:11px;color:#e8ecf4;font-weight:600;">${signal['range_low']:,.2f}</div>
+                    </div>
+                    <div style="text-align:center;">
+                        <div style="font-size:8px;color:#60a5fa;text-transform:uppercase;font-weight:600;">Width</div>
+                        <div style="font-size:11px;color:#f0b90b;font-weight:600;">${signal['range_size']:,.2f}</div>
+                    </div>
+                </div>"""
+
+                levels_html = ""
+                if formatted.get('entry'):
+                    levels_html = f"""<div class="signal-levels">
+                        <div class="signal-level-item">
+                            <div class="signal-level-label">Entry</div>
+                            <div class="signal-level-value" style="color:#e8ecf4;">{formatted['entry']}</div>
+                        </div>
+                        <div class="signal-level-item">
+                            <div class="signal-level-label">Stop Loss</div>
+                            <div class="signal-level-value" style="color:#ef4444;">${signal['stop_loss']:,.2f}</div>
+                        </div>
+                        <div class="signal-level-item">
+                            <div class="signal-level-label">Take Profit</div>
+                            <div class="signal-level-value" style="color:#10b981;">${signal['take_profit']:,.2f}</div>
+                        </div>
+                        <div class="signal-level-item">
+                            <div class="signal-level-label">R:R</div>
+                            <div class="signal-level-value" style="color:#f0b90b;">{formatted.get('rr', 'N/A')}</div>
+                        </div>
+                    </div>"""
+
+                time_str = signal['time'].strftime('%b %d, %H:%M') if hasattr(signal['time'], 'strftime') else str(signal['time'])[:16]
+                orb_session_label = signal.get('orb_session', '')
+
+                with col:
+                    st.markdown(f"""<div class="signal-card {direction}">
+                        <div class="signal-score-ring" style="background:{ring_bg};border:2px solid {ring_border};color:{ring_color};">
+                            {score}
+                        </div>
+                        <div class="signal-badge {direction}">{formatted['emoji']} {signal['direction']}</div>
+                        <span class="signal-conf {conf_class}">{conf} confidence</span>
+                        <div style="font-size:10px;color:#6b7a99;margin-top:4px;">{time_str} · {signal['timeframe']} · {orb_session_label} ORB</div>
+                        <div class="signal-explanation">{formatted['explanation']}</div>
+                        {range_html}
+                        {levels_html}
+                        <div class="signal-reasons">{reasons_html}</div>
+                    </div>""", unsafe_allow_html=True)
+        else:
+            st.markdown("""<div class="signal-empty">
+                <div style="font-size:24px;margin-bottom:8px;">&#128200;</div>
+                <div style="font-weight:600;color:#a8b2c8;margin-bottom:4px;">No ORB Signals</div>
+                <div>No session open range breakouts detected. The engine monitors London (07:00 UTC) and<br>
+                New York (13:30 UTC) opening ranges for breakouts with volume confirmation.</div>
             </div>""", unsafe_allow_html=True)
 
         # ── ICMarkets contextual CTA (post-signals) ──
@@ -5623,10 +5927,15 @@ def main():
             we tracked what happened next: did price hit our target (Win) or stop-loss (Loss)?
         </div>""", unsafe_allow_html=True)
 
-        # Run backtest
+        # Run backtest (pattern signals + ORB signals)
         try:
-            bt_mtf = fetch_multi_timeframe(GOLD_TICKER)
-            bt_results = backtest_signals(bt_mtf, lookback_bars=500, max_hold_bars=20) if bt_mtf else []
+            bt_mtf = mtf_data_cache if mtf_data_cache else fetch_multi_timeframe(GOLD_TICKER)
+            bt_pattern_results = backtest_signals(bt_mtf, lookback_bars=500, max_hold_bars=20) if bt_mtf else []
+            bt_orb_results = backtest_orb_signals(bt_mtf, lookback_bars=500, max_hold_bars=20) if bt_mtf else []
+            # Tag pattern results for identification
+            for r in bt_pattern_results:
+                r.setdefault('strategy', 'Pattern')
+            bt_results = bt_pattern_results + bt_orb_results
             bt_stats = compute_backtest_stats(bt_results) if bt_results else None
         except Exception as e:
             bt_results = []
@@ -5742,6 +6051,38 @@ def main():
                     </div>
                 </div>
             </div>""", unsafe_allow_html=True)
+
+            # ── Strategy Breakdown (Pattern vs ORB) ──
+            strategy_groups = {}
+            for r in bt_results:
+                strat = r.get('strategy', 'Pattern')
+                if strat not in strategy_groups:
+                    strategy_groups[strat] = {'total': 0, 'wins': 0, 'pnl_r': 0}
+                strategy_groups[strat]['total'] += 1
+                if r['outcome'] in ['TP1', 'TP2', 'TP3']:
+                    strategy_groups[strat]['wins'] += 1
+                strategy_groups[strat]['pnl_r'] += r.get('pnl_r', 0)
+
+            if len(strategy_groups) > 1:
+                st.markdown("""<div class="section-header" style="--section-accent: #06b6d4; margin-top: 16px;">
+                    <span class="section-title">Strategy Comparison</span>
+                </div>""", unsafe_allow_html=True)
+                st.markdown("<div style='font-size:10px;color:#6b7a99;margin-bottom:6px;'>Pattern-based reversal signals vs. Session Open Range Breakout signals.</div>", unsafe_allow_html=True)
+
+                for strat_name, sdata in sorted(strategy_groups.items(), key=lambda x: x[1]['pnl_r'], reverse=True):
+                    s_wr = (sdata['wins'] / sdata['total']) * 100 if sdata['total'] > 0 else 0
+                    s_color = "#10b981" if sdata['pnl_r'] > 0 else "#ef4444"
+                    strat_label = "Pattern Reversal" if strat_name == 'Pattern' else "Open Range Breakout"
+                    strat_icon = "&#x1F504;" if strat_name == 'Pattern' else "&#x1F4C8;"
+
+                    st.markdown(
+                        f"<div style='display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:rgba(15,20,40,0.5);border-radius:6px;margin-bottom:4px;border-left:3px solid {'#a855f7' if strat_name == 'Pattern' else '#3b82f6'};'>"
+                        f"<span style='font-size:12px;font-weight:600;color:#e2e8f0;'>{strat_icon} {strat_label}</span>"
+                        f"<div style='display:flex;gap:16px;align-items:center;'>"
+                        f"<span style='font-size:10px;color:#6b7a99;'>{sdata['total']} trades</span>"
+                        f"<span style='font-size:11px;font-weight:700;color:{'#10b981' if s_wr >= 50 else '#ef4444'};'>{s_wr:.0f}% WR</span>"
+                        f"<span style='font-size:11px;font-weight:700;color:{s_color};'>{sdata['pnl_r']:+.1f}R</span>"
+                        f"</div></div>", unsafe_allow_html=True)
 
             # ── Pattern Breakdown ──
             if bt_stats['pattern_stats']:
